@@ -36,7 +36,9 @@ class StandaloneDockerPolicy
      */
     public function update(User $user, StandaloneDocker $standaloneDocker): bool
     {
-        return $user->isAdminOfTeam($standaloneDocker->server->team_id);
+        return $user->isAdminOfTeam(
+            (int) $standaloneDocker->server->team_id
+        );
     }
 
     /**
@@ -44,7 +46,9 @@ class StandaloneDockerPolicy
      */
     public function delete(User $user, StandaloneDocker $standaloneDocker): bool
     {
-        return $user->isAdminOfTeam($standaloneDocker->server->team_id);
+        return $user->isAdminOfTeam(
+            (int) $standaloneDocker->server->team_id
+        );
     }
 
     /**

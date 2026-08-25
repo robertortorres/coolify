@@ -2,6 +2,7 @@
 
 namespace App\Livewire\SharedVariables\Team;
 
+use App\Models\SharedEnvironmentVariable;
 use App\Models\Team;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\DB;
@@ -22,7 +23,7 @@ class Index extends Component
     public function saveKey($data)
     {
         try {
-            $this->authorize('update', $this->team);
+            $this->authorize('create', SharedEnvironmentVariable::class);
 
             $found = $this->team->environment_variables()->where('key', $data['key'])->first();
             if ($found) {
@@ -68,10 +69,13 @@ class Index extends Component
 
     private function formatEnvironmentVariables($variables)
     {
-        $isMember = auth()->user()?->isMember();
+        $hideValues = ! (
+            isInstanceAdmin()
+            || auth()->user()?->isAdminOfTeam((int) $this->team->id)
+        );
 
-        return $variables->map(function ($item) use ($isMember) {
-            if ($isMember) {
+        return $variables->map(function ($item) use ($hideValues) {
+            if ($hideValues) {
                 return "$item->key=(Hidden, only admins can view)";
             }
             if ($item->is_shown_once) {
@@ -88,7 +92,7 @@ class Index extends Component
     public function submit()
     {
         try {
-            $this->authorize('update', $this->team);
+            $this->authorize('create', SharedEnvironmentVariable::class);
             $this->handleBulkSubmit();
             $this->getDevView();
         } catch (\Throwable $e) {

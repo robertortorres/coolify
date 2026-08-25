@@ -36,7 +36,9 @@ class SharedEnvironmentVariablePolicy
      */
     public function update(User $user, SharedEnvironmentVariable $sharedEnvironmentVariable): bool
     {
-        return $user->isAdminOfTeam($sharedEnvironmentVariable->team_id);
+        return $user->isAdminOfTeam(
+            (int) $sharedEnvironmentVariable->team_id
+        );
     }
 
     /**
@@ -44,7 +46,9 @@ class SharedEnvironmentVariablePolicy
      */
     public function delete(User $user, SharedEnvironmentVariable $sharedEnvironmentVariable): bool
     {
-        return $user->isAdminOfTeam($sharedEnvironmentVariable->team_id);
+        return $user->isAdminOfTeam(
+            (int) $sharedEnvironmentVariable->team_id
+        );
     }
 
     /**
@@ -68,6 +72,8 @@ class SharedEnvironmentVariablePolicy
      */
     public function manageEnvironment(User $user, SharedEnvironmentVariable $sharedEnvironmentVariable): bool
     {
-        return $user->isAdminOfTeam($sharedEnvironmentVariable->team_id);
+        return $user->isAdminOfTeam(
+            (int) $sharedEnvironmentVariable->team_id
+        );
     }
 }
