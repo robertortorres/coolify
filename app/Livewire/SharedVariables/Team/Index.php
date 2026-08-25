@@ -69,10 +69,13 @@ class Index extends Component
 
     private function formatEnvironmentVariables($variables)
     {
-        $isMember = auth()->user()?->isMember();
+        $hideValues = ! (
+            isInstanceAdmin()
+            || auth()->user()?->isAdminOfTeam((int) $this->team->id)
+        );
 
-        return $variables->map(function ($item) use ($isMember) {
-            if ($isMember) {
+        return $variables->map(function ($item) use ($hideValues) {
+            if ($hideValues) {
                 return "$item->key=(Hidden, only admins can view)";
             }
             if ($item->is_shown_once) {

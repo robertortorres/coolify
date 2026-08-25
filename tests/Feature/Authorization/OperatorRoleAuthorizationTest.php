@@ -1,7 +1,9 @@
 <?php
 
 use App\Livewire\Boarding\Index as BoardingIndex;
+use App\Livewire\Project\Shared\EnvironmentVariable\Show as EnvironmentVariableShow;
 use App\Livewire\Project\Shared\ExecuteContainerCommand;
+use App\Livewire\SharedVariables\Team\Index as TeamSharedVariables;
 use App\Livewire\Team\InviteLink;
 use App\Livewire\Team\Member;
 use App\Livewire\Terminal\Index as TerminalIndex;
@@ -58,7 +60,7 @@ test('operator can create and manage resources while member stays read-only', fu
         ->and($this->operator->can('create', Service::class))->toBeTrue()
         ->and($this->operator->can('create', StandalonePostgresql::class))->toBeTrue()
         ->and($this->operator->can('create', Project::class))->toBeTrue()
-        ->and($this->operator->can('create', SharedEnvironmentVariable::class))->toBeTrue();
+        ->and($this->operator->can('create', SharedEnvironmentVariable::class))->toBeFalse();
 
     expect($this->member->can('createAnyResource'))->toBeFalse()
         ->and($this->member->can('create', Application::class))->toBeFalse()
@@ -74,6 +76,47 @@ test('operator can update team-scoped resources', function () {
     expect($this->operator->can('update', $project))->toBeTrue()
         ->and($this->operator->can('delete', $project))->toBeTrue()
         ->and($this->member->can('update', $project))->toBeFalse();
+});
+
+test('operator cannot manage or reveal team shared variables', function () {
+    $variable = SharedEnvironmentVariable::create([
+        'key' => 'TEAM_SECRET',
+        'value' => 'super-secret-value',
+        'type' => 'team',
+        'team_id' => $this->team->id,
+    ]);
+
+    expect($this->operator->can('create', SharedEnvironmentVariable::class))
+        ->toBeFalse()
+        ->and($this->operator->can('update', $variable))
+        ->toBeFalse()
+        ->and($this->operator->can('delete', $variable))
+        ->toBeFalse()
+        ->and($this->operator->can('manageEnvironment', $variable))
+        ->toBeFalse();
+
+    Livewire::actingAs($this->operator)
+        ->test(TeamSharedVariables::class)
+        ->assertSet(
+            'variables',
+            fn (?string $variables) => str_contains(
+                (string) $variables,
+                'TEAM_SECRET=(Hidden, only admins can view)'
+            ) && ! str_contains(
+                (string) $variables,
+                'super-secret-value'
+            )
+        );
+
+    Livewire::actingAs($this->operator)
+        ->test(EnvironmentVariableShow::class, [
+            'env' => $variable,
+            'type' => 'team',
+        ])
+        ->call('loadValues')
+        ->assertSet('value', null)
+        ->call('copyValue')
+        ->assertReturned(null);
 });
 
 test('operator cannot access the terminal gate', function () {
