@@ -17,7 +17,9 @@ use App\Models\S3Storage;
 use App\Models\Server;
 use App\Models\Service;
 use App\Models\SharedEnvironmentVariable;
+use App\Models\StandaloneDocker;
 use App\Models\StandalonePostgresql;
+use App\Models\SwarmDocker;
 use App\Models\Team;
 use App\Models\TeamInvitation;
 use App\Models\User;
@@ -117,6 +119,30 @@ test('operator cannot manage or reveal team shared variables', function () {
         ->assertSet('value', null)
         ->call('copyValue')
         ->assertReturned(null);
+});
+
+test('operator cannot administer deployment destinations', function () {
+    $server = Server::factory()->create([
+        'team_id' => $this->team->id,
+    ]);
+
+    $destination = $server
+        ->standaloneDockers()
+        ->firstOrFail();
+
+    expect($this->operator->can('create', StandaloneDocker::class))
+        ->toBeFalse()
+        ->and($this->operator->can('update', $destination))
+        ->toBeFalse()
+        ->and($this->operator->can('delete', $destination))
+        ->toBeFalse()
+        ->and($this->operator->can('create', SwarmDocker::class))
+        ->toBeFalse();
+
+    expect($this->admin->can('create', StandaloneDocker::class))
+        ->toBeTrue()
+        ->and($this->admin->can('update', $destination))
+        ->toBeTrue();
 });
 
 test('operator cannot access the terminal gate', function () {
