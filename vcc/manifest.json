@@ -1,0 +1,46 @@
+{
+  "distribution": {
+    "name": "Vibepark Coolify Customization",
+    "short_name": "VCC",
+    "release_channel": "development"
+  },
+  "upstream": {
+    "repository": "https://github.com/coollabsio/coolify",
+    "branch": "next",
+    "base_commit": "58d074721c7dbb7c75c24ceb7b93fbf1912cbf1b",
+    "synchronized_at": "2026-08-25"
+  },
+  "vcc": {
+    "branch": "vcc/main",
+    "checkpoint_commit": "bdd1cf6ca",
+    "image_repository": "ghcr.io/robertortorres/coolify",
+    "image_status": "planned"
+  },
+  "integrations": [
+    {
+      "name": "instance-admin-team-access",
+      "pr": 11488
+    },
+    {
+      "name": "shared-build-servers",
+      "pr": 11489
+    },
+    {
+      "name": "shared-deployment-servers",
+      "pr": 11491
+    },
+    {
+      "name": "server-metrics-api",
+      "pr": 11432
+    },
+    {
+      "name": "predefined-compose-network",
+      "pr": 11485
+    },
+    {
+      "name": "operator-role",
+      "pr": 11502,
+      "status": "adapted-and-hardened"
+    }
+  ]
+}
