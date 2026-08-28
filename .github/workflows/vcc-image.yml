@@ -1,0 +1,117 @@
+name: VCC Image
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: vcc-image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    name: Run VCC quality checks
+    uses: ./.github/workflows/vcc-quality.yml
+
+  build:
+    name: Build VCC image
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Enforce VCC release branch
+        run: |
+          if [ "${GITHUB_REF}" != "refs/heads/vcc/main" ]; then
+            echo "::error::VCC images may only be built from vcc/main."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Validate VCC manifest
+        run: python3 scripts/vcc/validate_manifest.py
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Resolve image metadata
+        id: metadata
+        run: |
+          BASE_VERSION=$(
+            docker run --rm               -v "${PWD}:/app"               -w /app               php:8.4-alpine               php bootstrap/getVersion.php
+          )
+
+          if [ -z "${BASE_VERSION}" ] || [ "${BASE_VERSION}" = "unknown" ]; then
+            echo "::error::Unable to resolve the Coolify base version."
+            exit 1
+          fi
+
+          SHORT_SHA="${GITHUB_SHA::9}"
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER}/coolify"
+          TAG="vcc-${SHORT_SHA}"
+          VERSION="${BASE_VERSION}-vcc.${GITHUB_RUN_NUMBER}.${SHORT_SHA}"
+
+          {
+            echo "image=${IMAGE}"
+            echo "tag=${TAG}"
+            echo "version=${VERSION}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Ensure image tag is immutable
+        env:
+          IMAGE: ${{ steps.metadata.outputs.image }}
+          TAG: ${{ steps.metadata.outputs.tag }}
+        run: |
+          if docker buildx imagetools inspect             "${IMAGE}:${TAG}" >/dev/null 2>&1
+          then
+            echo "::error::Image tag ${IMAGE}:${TAG} already exists."
+            exit 1
+          fi
+
+      - name: Build and push VCC image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/production/Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            COOLIFY_VERSION=${{ steps.metadata.outputs.version }}
+          tags: |
+            ${{ steps.metadata.outputs.image }}:${{ steps.metadata.outputs.tag }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.metadata.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Write image summary
+        env:
+          IMAGE: ${{ steps.metadata.outputs.image }}
+          TAG: ${{ steps.metadata.outputs.tag }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            printf '## VCC image published\n\n'
+            printf -- "- Image: \`%s:%s\`\n" "${IMAGE}" "${TAG}"
+            printf -- "- Version: \`%s\`\n" "${VERSION}"
+            printf -- "- Digest: \`%s\`\n" "${DIGEST}"
+            printf -- "- Platform: \`linux/amd64\`\n"
+          } >> "${GITHUB_STEP_SUMMARY}"

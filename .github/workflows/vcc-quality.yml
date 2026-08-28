@@ -1,0 +1,100 @@
+name: VCC Quality
+
+on:
+  push:
+    branches:
+      - vcc/main
+      - "chore/vcc-*"
+      - "integration/*"
+  pull_request:
+    branches:
+      - vcc/main
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vcc-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Validate VCC
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate VCC manifest
+        run: python3 scripts/vcc/validate_manifest.py
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: bcmath, intl, mbstring, pcntl, pdo_sqlite, sodium, sqlite3, zip
+          coverage: none
+          tools: composer:v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Prepare testing environment
+        run: cp .env.testing .env
+
+      - name: Validate Composer metadata
+        run: composer validate --no-check-publish
+
+      - name: Install PHP dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend assets
+        run: npm run build
+
+      - name: Check VCC PHP formatting
+        run: |
+          BASE=$(jq -r '.upstream.base_commit' vcc/manifest.json)
+
+          mapfile -t php_files < <(
+            git diff --name-only "${BASE}...HEAD" -- '*.php'
+          )
+
+          if ((${#php_files[@]})); then
+            vendor/bin/pint --test "${php_files[@]}"
+          else
+            echo "No VCC PHP files require formatting validation."
+          fi
+
+      - name: Run VCC regression suite
+        run: |
+          vendor/bin/pest \
+            tests/Feature/Authorization/OperatorRoleAuthorizationTest.php \
+            tests/Feature/Authorization/ResourceCreationAuthorizationTest.php \
+            tests/Feature/TerminalAuthRoutesAuthorizationTest.php \
+            tests/Unit/RoleEnumTest.php \
+            tests/Unit/Policies \
+            tests/Feature/InstanceAdminAuthorizationTest.php \
+            tests/Feature/SwitchTeamTest.php \
+            tests/Feature/Api/ServerMetricsApiTest.php \
+            tests/Feature/ServicePredefinedNetworkParserTest.php \
+            tests/Feature/SharedBuildServerTest.php \
+            tests/Feature/SharedBuildTeamsComponentTest.php \
+            tests/Feature/SharedDeploymentServerTest.php \
+            tests/Feature/SharedDeploymentTeamsComponentTest.php \
+            tests/Feature/SharedDeploymentApplicationApiTest.php \
+            tests/Feature/SharedDeploymentApplicationWebTest.php \
+            tests/Feature/SharedDeploymentResourceSelectorTest.php \
+            tests/Feature/Api/DeploymentCancellationApiTest.php
