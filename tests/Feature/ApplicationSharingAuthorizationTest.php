@@ -222,3 +222,67 @@ test('private visibility ignores explicit operate grants', function () {
         expect($other->can($ability, $this->application))->toBeFalse();
     }
 });
+
+test('instance administrator can manage a private application', function () {
+    $rootTeam = Team::find(0) ?? Team::factory()->create(['id' => 0]);
+    $superadmin = User::factory()->create();
+    $superadmin->teams()->attach($rootTeam, ['role' => 'admin']);
+
+    $this->application->forceFill([
+        'visibility' => 'private',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    expect($superadmin->teams()->whereKey($this->team->id)->exists())
+        ->toBeFalse();
+
+    foreach (['view', 'update', 'delete', 'deploy', 'manageEnvironment'] as $ability) {
+        expect($superadmin->can($ability, $this->application))->toBeTrue();
+    }
+});
+
+test('private creator loses access after leaving the owning team', function () {
+    $creator = User::factory()->create();
+    $creator->teams()->attach($this->team, ['role' => 'operator']);
+
+    $this->application->forceFill([
+        'visibility' => 'private',
+        'created_by' => $creator->id,
+    ])->save();
+
+    expect($creator->can('view', $this->application))->toBeTrue();
+
+    $creator->teams()->detach($this->team->id);
+
+    foreach (['view', 'update', 'deploy'] as $ability) {
+        expect($creator->can($ability, $this->application))->toBeFalse();
+    }
+
+    expect($this->owner->can('view', $this->application))->toBeTrue();
+});
+
+test('team share stops granting access after recipient leaves that team', function (string $permission) {
+    $recipient = User::factory()->create();
+    $recipientTeam = Team::factory()->create();
+    $recipient->teams()->attach($recipientTeam, ['role' => 'operator']);
+
+    $this->application->forceFill([
+        'visibility' => 'custom',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    ApplicationShare::create([
+        'application_id' => $this->application->id,
+        'team_id' => $recipientTeam->id,
+        'permission' => $permission,
+        'granted_by' => $this->owner->id,
+    ]);
+
+    expect($recipient->can('view', $this->application))->toBeTrue();
+
+    $recipient->teams()->detach($recipientTeam->id);
+
+    foreach (['view', 'deploy', 'manageDeployments'] as $ability) {
+        expect($recipient->can($ability, $this->application))->toBeFalse();
+    }
+})->with(['read', 'operate']);
