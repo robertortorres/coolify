@@ -11,6 +11,7 @@ use App\Models\Team;
 use App\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\ValidationException;
 
 uses(RefreshDatabase::class);
@@ -360,3 +361,55 @@ test('cloning records the new creator without copying explicit shares', function
         ->and(ApplicationShare::where('application_id', $this->application->id)->count())
         ->toBe(1);
 });
+
+test('web access hides private applications from other team members', function (
+    string $role,
+    string $surface
+) {
+    $this->withoutVite();
+
+    $this->application->forceFill([
+        'name' => 'vcc-private-visibility-probe',
+        'visibility' => 'private',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    Application::factory()->create([
+        'name' => 'vcc-team-visible-probe',
+        'environment_id' => $this->application->environment_id,
+        'destination_id' => $this->application->destination_id,
+        'destination_type' => $this->application->destination_type,
+    ]);
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => $role]);
+
+    Team::query()->update(['show_boarding' => false]);
+    Cache::flush();
+
+    $this->actingAs($other);
+    session(['currentTeam' => $this->team->fresh()]);
+
+    $environment = $this->application->environment;
+    $parameters = [
+        'project_uuid' => $environment->project->uuid,
+        'environment_uuid' => $environment->uuid,
+    ];
+
+    if ($surface === 'listing') {
+        $this->get(route('project.resource.index', $parameters))
+            ->assertSuccessful()
+            ->assertSee('vcc-team-visible-probe')
+            ->assertDontSee('vcc-private-visibility-probe')
+            ->assertDontSee($this->application->uuid);
+    } else {
+        $parameters['application_uuid'] = $this->application->uuid;
+        $this->get(route('project.application.configuration', $parameters))
+            ->assertNotFound();
+    }
+})->with([
+    'member listing' => ['member', 'listing'],
+    'operator listing' => ['operator', 'listing'],
+    'member direct URL' => ['member', 'direct'],
+    'operator direct URL' => ['operator', 'direct'],
+]);

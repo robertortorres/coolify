@@ -11,7 +11,7 @@
         : 'project.show';
     $applicationUuid = request()->route('application_uuid');
     $currentApplication = $currentEnvironment && $applicationUuid
-        ? $currentEnvironment->applications()->where('uuid', $applicationUuid)->first()
+        ? $currentEnvironment->applications()->visibleTo(auth()->user())->where('uuid', $applicationUuid)->first()
         : null;
     $databaseUuid = request()->route('database_uuid');
     $currentDatabase = $currentEnvironment && $databaseUuid
@@ -24,7 +24,7 @@
     $currentResource = $currentApplication ?? $currentDatabase ?? $currentService;
     $resourceItems = $currentEnvironment
         ? collect()
-            ->concat($currentEnvironment->applications->map(fn ($application) => [
+            ->concat($currentEnvironment->applications()->visibleTo(auth()->user())->get()->map(fn ($application) => [
                 'type' => 'application',
                 'resource' => $application,
             ]))

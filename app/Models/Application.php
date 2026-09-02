@@ -15,6 +15,7 @@ use App\Traits\HasNoindexDomains;
 use App\Traits\HasSafeStringAttribute;
 use App\Traits\HasSecretManager;
 use Database\Factories\ApplicationFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -484,6 +485,59 @@ class Application extends BaseModel
         json_decode($string);
 
         return json_last_error() === JSON_ERROR_NONE;
+    }
+
+    public function scopeVisibleTo(
+        Builder $query,
+        User $user
+    ): Builder {
+        if ($user->isInstanceAdmin()) {
+            return $query;
+        }
+
+        $teamIds = $user->teams()->pluck('teams.id')->all();
+        $ownerTeamIds = $user->teams()->wherePivot('role', 'owner')
+            ->pluck('teams.id')->all();
+
+        $inTeams = fn (Builder $project): Builder => $project->whereIn('team_id', $teamIds);
+
+        if (! $this->getConnection()->getSchemaBuilder()->hasColumn(
+            $this->getTable(), 'visibility'
+        )) {
+            return $query->whereHas('environment.project', $inTeams);
+        }
+
+        return $query
+            ->whereHas('environment.project')
+            ->whereIn('applications.visibility', ['team', 'private', 'custom'])
+            ->where(function (Builder $visible) use (
+                $user, $teamIds, $ownerTeamIds, $inTeams
+            ): void {
+                $visible->where(function (Builder $team) use ($inTeams): void {
+                    $team->where('applications.visibility', 'team')
+                        ->whereHas('environment.project', $inTeams);
+                })->orWhereHas('environment.project', function (Builder $project) use ($ownerTeamIds): void {
+                    $project->whereIn('team_id', $ownerTeamIds);
+                })->orWhere(function (Builder $creator) use ($user, $inTeams): void {
+                    $creator->where('applications.created_by', $user->getKey())
+                        ->whereHas('environment.project', $inTeams);
+                })->orWhere(function (Builder $shared) use ($user, $teamIds): void {
+                    $grants = ApplicationShare::query()
+                        ->select('application_id')
+                        ->whereIn('permission', ['read', 'operate'])
+                        ->where(function (Builder $recipient) use ($user, $teamIds): void {
+                            $recipient->where(function (Builder $direct) use ($user): void {
+                                $direct->where('user_id', $user->getKey())
+                                    ->whereNull('team_id');
+                            })->orWhere(function (Builder $team) use ($teamIds): void {
+                                $team->whereNull('user_id')->whereIn('team_id', $teamIds);
+                            });
+                        });
+
+                    $shared->where('applications.visibility', 'custom')
+                        ->whereIn('applications.id', $grants);
+                });
+            });
     }
 
     public static function ownedByCurrentTeamAPI(int $teamId)
