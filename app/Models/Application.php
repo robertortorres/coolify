@@ -265,6 +265,14 @@ class Application extends BaseModel
     protected static function booted()
     {
         static::creating(function ($application) {
+            // Record the authenticated creator only when the schema supports it.
+            if ($application->getConnection()->getSchemaBuilder()->hasColumn(
+                $application->getTable(),
+                'created_by'
+            )) {
+                $application->created_by = auth()->id();
+            }
+
             $application->manual_webhook_secret_github ??= Str::random(40);
             $application->manual_webhook_secret_gitlab ??= Str::random(40);
             $application->manual_webhook_secret_bitbucket ??= Str::random(40);

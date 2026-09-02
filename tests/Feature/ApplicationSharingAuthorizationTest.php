@@ -44,11 +44,11 @@ beforeEach(function () {
     ]);
 });
 
-test('application storage defaults to team visibility without inventing a creator', function () {
+test('application creation records the authenticated creator', function () {
     $application = $this->application->fresh();
 
     expect($application->visibility)->toBe('team')
-        ->and($application->created_by)->toBeNull();
+        ->and($application->created_by)->toBe($this->owner->id);
 });
 
 test('sharing storage supports an explicit user or team recipient', function (string $recipient) {
@@ -286,3 +286,77 @@ test('team share stops granting access after recipient leaves that team', functi
         expect($recipient->can($ability, $this->application))->toBeFalse();
     }
 })->with(['read', 'operate']);
+
+test('application creation without authentication leaves creator unset', function () {
+    auth()->logout();
+
+    $application = Application::factory()->create([
+        'environment_id' => $this->application->environment_id,
+        'destination_id' => $this->application->destination_id,
+        'destination_type' => $this->application->destination_type,
+    ]);
+
+    expect($application->fresh()->created_by)->toBeNull();
+});
+
+test('new application records the operator who actually created it', function () {
+    $operator = User::factory()->create();
+    $operator->teams()->attach($this->team, ['role' => 'operator']);
+    $this->actingAs($operator);
+
+    $application = Application::factory()->create([
+        'environment_id' => $this->application->environment_id,
+        'destination_id' => $this->application->destination_id,
+        'destination_type' => $this->application->destination_type,
+    ]);
+
+    expect($application->fresh()->created_by)->toBe($operator->id);
+});
+
+test('editing an application preserves its original creator', function () {
+    $operator = User::factory()->create();
+    $operator->teams()->attach($this->team, ['role' => 'operator']);
+    $this->actingAs($operator);
+
+    $this->application->name = 'Updated application name';
+    $this->application->save();
+
+    expect($this->application->fresh()->created_by)->toBe($this->owner->id);
+});
+
+test('editing a legacy application does not invent a creator', function () {
+    $this->application->forceFill(['created_by' => null])->save();
+
+    $this->application->name = 'Updated legacy application';
+    $this->application->save();
+
+    expect($this->application->fresh()->created_by)->toBeNull();
+});
+
+test('cloning records the new creator without copying explicit shares', function () {
+    $recipient = User::factory()->create();
+    ApplicationShare::create([
+        'application_id' => $this->application->id,
+        'user_id' => $recipient->id,
+        'permission' => 'read',
+        'granted_by' => $this->owner->id,
+    ]);
+
+    $operator = User::factory()->create();
+    $operator->teams()->attach($this->team, ['role' => 'operator']);
+    $this->actingAs($operator);
+
+    $this->application->refresh();
+
+    $clone = clone_application(
+        $this->application,
+        $this->application->destination
+    );
+
+    expect($clone->fresh()->created_by)->toBe($operator->id)
+        ->and($this->application->fresh()->created_by)->toBe($this->owner->id)
+        ->and(ApplicationShare::where('application_id', $clone->id)->exists())
+        ->toBeFalse()
+        ->and(ApplicationShare::where('application_id', $this->application->id)->count())
+        ->toBe(1);
+});
