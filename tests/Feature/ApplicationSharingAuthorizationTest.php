@@ -107,3 +107,118 @@ test('sharing storage rejects duplicate grants', function (string $recipient) {
     expect(fn () => ApplicationShare::create($attributes))
         ->toThrow(QueryException::class);
 })->with(['user_id', 'team_id']);
+
+test('private application denies other team members', function (string $role) {
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => $role]);
+
+    $this->application->forceFill([
+        'visibility' => 'private',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    foreach ([
+        'view', 'update', 'delete', 'deploy',
+        'manageDeployments', 'manageEnvironment', 'uploadBackup',
+    ] as $ability) {
+        expect($other->can($ability, $this->application))
+            ->toBeFalse("Unexpected access: {$role} / {$ability}");
+    }
+})->with(['member', 'operator', 'admin']);
+
+test('private application remains visible to creator and owning team owner', function () {
+    $creator = User::factory()->create();
+    $creator->teams()->attach($this->team, ['role' => 'operator']);
+
+    $this->application->forceFill([
+        'visibility' => 'private',
+        'created_by' => $creator->id,
+    ])->save();
+
+    expect($creator->can('view', $this->application))->toBeTrue()
+        ->and($this->owner->can('view', $this->application))->toBeTrue();
+});
+
+test('custom read access can be granted and revoked', function (string $recipient) {
+    $other = User::factory()->create();
+    $otherTeam = Team::factory()->create();
+    $other->teams()->attach($otherTeam, ['role' => 'operator']);
+
+    $this->application->forceFill([
+        'visibility' => 'custom',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    expect($other->can('view', $this->application))->toBeFalse();
+
+    $share = ApplicationShare::create([
+        'application_id' => $this->application->id,
+        $recipient => $recipient === 'user_id' ? $other->id : $otherTeam->id,
+        'permission' => 'read',
+        'granted_by' => $this->owner->id,
+    ]);
+
+    expect($other->can('view', $this->application))->toBeTrue();
+
+    foreach (['update', 'delete', 'deploy', 'manageEnvironment'] as $ability) {
+        expect($other->can($ability, $this->application))->toBeFalse();
+    }
+
+    $share->delete();
+
+    expect($other->can('view', $this->application))->toBeFalse();
+})->with(['user_id', 'team_id']);
+
+test('custom operate grant permits deployment but not administration', function (string $recipient) {
+    $other = User::factory()->create();
+    $otherTeam = Team::factory()->create();
+    $other->teams()->attach($otherTeam, ['role' => 'operator']);
+
+    $this->application->forceFill([
+        'visibility' => 'custom',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $share = ApplicationShare::create([
+        'application_id' => $this->application->id,
+        $recipient => $recipient === 'user_id' ? $other->id : $otherTeam->id,
+        'permission' => 'operate',
+        'granted_by' => $this->owner->id,
+    ]);
+
+    foreach (['view', 'deploy', 'manageDeployments'] as $ability) {
+        expect($other->can($ability, $this->application))
+            ->toBeTrue("Expected operate access: {$ability}");
+    }
+
+    foreach (['update', 'delete', 'manageEnvironment', 'uploadBackup'] as $ability) {
+        expect($other->can($ability, $this->application))
+            ->toBeFalse("Unexpected administrative access: {$ability}");
+    }
+
+    $share->delete();
+
+    foreach (['view', 'deploy', 'manageDeployments'] as $ability) {
+        expect($other->can($ability, $this->application))->toBeFalse();
+    }
+})->with(['user_id', 'team_id']);
+
+test('private visibility ignores explicit operate grants', function () {
+    $other = User::factory()->create();
+
+    $this->application->forceFill([
+        'visibility' => 'private',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    ApplicationShare::create([
+        'application_id' => $this->application->id,
+        'user_id' => $other->id,
+        'permission' => 'operate',
+        'granted_by' => $this->owner->id,
+    ]);
+
+    foreach (['view', 'deploy', 'manageDeployments'] as $ability) {
+        expect($other->can($ability, $this->application))->toBeFalse();
+    }
+});
