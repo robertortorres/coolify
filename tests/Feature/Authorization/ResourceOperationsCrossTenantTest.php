@@ -15,6 +15,9 @@ use Livewire\Livewire;
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
+    // Database IDs are reused between tests; discard cached server instances.
+    Server::flushIdentityMap();
+
     $this->withoutVite();
     InstanceSettings::forceCreate(['id' => 0]);
 
@@ -62,7 +65,9 @@ test('cloneTo allows destination belonging to own team', function () {
 
     Livewire::test(ResourceOperations::class, ['resource' => $this->applicationA])
         ->call('cloneTo', $secondDestination->uuid)
-        ->assertHasNoErrors('destination_id');
+        ->assertHasNoErrors('destination_id')
+        ->assertNotDispatched('error')
+        ->assertRedirect();
 
     expect(Application::count())->toBe(2);
 });
@@ -72,6 +77,7 @@ test('cloneTo can place the cloned resource in another environment', function ()
 
     Livewire::test(ResourceOperations::class, ['resource' => $this->applicationA])
         ->call('cloneTo', $this->destinationA->uuid, $targetEnvironment->id)
+        ->assertNotDispatched('error')
         ->assertRedirect();
 
     $clone = Application::whereKeyNot($this->applicationA->id)->firstOrFail();
