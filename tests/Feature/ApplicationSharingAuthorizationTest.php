@@ -10,6 +10,7 @@ use App\Models\ApplicationDeploymentQueue;
 use App\Models\ApplicationPreview;
 use App\Models\ApplicationShare;
 use App\Models\Environment;
+use App\Models\EnvironmentVariable;
 use App\Models\InstanceSettings;
 use App\Models\PrivateKey;
 use App\Models\Project;
@@ -1663,3 +1664,54 @@ test('logs parent rechecks application access after revocation', function (strin
     Process::assertNothingRan();
     Queue::assertNothingPushed();
 })->with(['hydrate', 'loadAllContainers', 'render']);
+
+test('environment API hides private applications regardless of token sensitivity', function (bool $sensitive) {
+    Process::fake();
+    Queue::fake();
+
+    InstanceSettings::findOrFail(0)->forceFill([
+        'is_api_enabled' => true,
+        'allowed_ips' => '127.0.0.1',
+    ])->save();
+
+    $this->application->forceFill([
+        'visibility' => 'private',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    EnvironmentVariable::create([
+        'key' => 'VCC_PRIVATE_PROBE',
+        'value' => 'vcc-fictional-secret-value',
+        'resourceable_type' => Application::class,
+        'resourceable_id' => $this->application->id,
+        'is_preview' => false,
+        'is_shown_once' => false,
+    ]);
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    expect($other->can('view', $this->application))->toBeFalse();
+
+    session(['currentTeam' => $this->team]);
+    $abilities = $sensitive ? ['read', 'read:sensitive'] : ['read'];
+    $token = $other->createToken('private-env-test', $abilities);
+
+    auth()->logout();
+    auth()->forgetGuards();
+    Cache::flush();
+    Once::flush();
+
+    $response = $this->withToken($token->plainTextToken)
+        ->getJson('/api/v1/applications/'.$this->application->uuid.'/envs');
+
+    expect($response->getContent())
+        ->not->toContain('VCC_PRIVATE_PROBE')
+        ->not->toContain('vcc-fictional-secret-value');
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+
+    $response->assertNotFound()
+        ->assertExactJson(['message' => 'Application not found']);
+})->with([false, true]);
