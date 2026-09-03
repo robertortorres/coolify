@@ -2,6 +2,7 @@
 
 use App\Jobs\ApplicationDeploymentJob;
 use App\Livewire\GlobalSearch;
+use App\Livewire\Project\Shared\EnvironmentVariable\Show;
 use App\Livewire\Project\Shared\GetLogs;
 use App\Livewire\Project\Shared\Logs;
 use App\Livewire\Project\Shared\Tags;
@@ -1782,3 +1783,135 @@ test('shared application access cannot mutate environment variables', function (
 
     $response->assertForbidden();
 })->with(['read', 'operate'])->with(['create', 'update', 'bulk', 'delete']);
+
+test('environment Show rejects direct syncData writes for shared access', function (string $permission) {
+    $this->withoutVite();
+    Process::fake();
+    Queue::fake();
+
+    $this->application->forceFill([
+        'visibility' => 'custom',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $env = EnvironmentVariable::create([
+        'key' => 'VCC_DIRECT_SYNC',
+        'value' => 'original-fictional-value',
+        'resourceable_type' => Application::class,
+        'resourceable_id' => $this->application->id,
+        'is_preview' => false,
+        'is_shown_once' => false,
+        'is_multiline' => false,
+        'is_literal' => false,
+        'is_runtime' => true,
+        'is_buildtime' => true,
+        'is_required' => false,
+    ]);
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+    ApplicationShare::create([
+        'application_id' => $this->application->id,
+        'user_id' => $other->id,
+        'permission' => $permission,
+        'granted_by' => $this->owner->id,
+    ]);
+
+    $this->actingAs($other);
+    session(['currentTeam' => $this->team->fresh()]);
+    Cache::flush();
+    Once::flush();
+
+    expect($other->can('view', $this->application))->toBeTrue();
+    expect($other->can('manageEnvironment', $this->application))->toBeFalse();
+
+    $component = Livewire::test(
+        Show::class,
+        ['env' => $env, 'type' => 'application']
+    )->assertOk();
+
+    $component->set('value', 'forbidden-fictional-value')
+        ->call('syncData', true);
+
+    expect($env->fresh()->value)->toBe('original-fictional-value');
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+
+    $component->assertForbidden();
+})->with(['read', 'operate']);
+
+test('environment variable policy respects application sharing', function (string $access, string $ability) {
+    $this->application->forceFill([
+        'visibility' => $access === 'private' ? 'private' : 'custom',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $env = EnvironmentVariable::create([
+        'key' => 'VCC_POLICY_PROBE',
+        'value' => 'fictional-value',
+        'resourceable_type' => Application::class,
+        'resourceable_id' => $this->application->id,
+        'is_preview' => false,
+    ]);
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    if ($access !== 'private') {
+        ApplicationShare::create([
+            'application_id' => $this->application->id,
+            'user_id' => $other->id,
+            'permission' => $access,
+            'granted_by' => $this->owner->id,
+        ]);
+    }
+
+    $expected = $ability === 'view' && $access !== 'private';
+
+    expect($other->can($ability, $env))->toBe($expected);
+})->with(['private', 'read', 'operate'])
+    ->with(['view', 'update', 'delete', 'manageEnvironment']);
+
+test('environment Show owner can persist through syncData', function () {
+    $this->withoutVite();
+    Process::fake();
+    Queue::fake();
+
+    $this->application->forceFill([
+        'visibility' => 'private',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $env = EnvironmentVariable::create([
+        'key' => 'VCC_OWNER_SYNC',
+        'value' => 'original-fictional-value',
+        'resourceable_type' => Application::class,
+        'resourceable_id' => $this->application->id,
+        'is_preview' => false,
+        'is_shown_once' => false,
+        'is_multiline' => false,
+        'is_literal' => false,
+        'is_runtime' => true,
+        'is_buildtime' => true,
+        'is_required' => false,
+    ]);
+
+    foreach (['view', 'update', 'delete', 'manageEnvironment'] as $ability) {
+        expect($this->owner->can($ability, $env))->toBeTrue();
+    }
+
+    Livewire::test(
+        Show::class,
+        ['env' => $env, 'type' => 'application']
+    )
+        ->assertOk()
+        ->set('value', 'updated-fictional-value')
+        ->call('syncData', true)
+        ->assertOk();
+
+    expect($env->fresh()->value)->toBe('updated-fictional-value');
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+});

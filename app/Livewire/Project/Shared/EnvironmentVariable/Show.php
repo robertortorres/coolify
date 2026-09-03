@@ -188,6 +188,15 @@ class Show extends Component
     public function syncData(bool $toModel = false)
     {
         if ($toModel) {
+            $this->authorize('update', $this->env);
+
+            if ($this->env instanceof ModelsEnvironmentVariable) {
+                $resource = $this->env->resourceable;
+                if ($resource instanceof Application) {
+                    $this->authorize('manageEnvironment', $resource);
+                }
+            }
+
             $this->key = ValidationPatterns::normalizeEnvironmentVariableKey($this->key);
 
             if ($this->isSharedVariable) {
