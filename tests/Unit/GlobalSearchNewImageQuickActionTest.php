@@ -56,20 +56,15 @@ it('ensures docker-image item has quickcommand with new image', function () {
         ->toContain("'type' => 'docker-image'");
 });
 
-it('uses neutral hover styling for GlobalSearch quick action rows', function () {
-    $bladeFile = file_get_contents(__DIR__.'/../../resources/views/livewire/global-search.blade.php');
+it('uses command palette styling and transitions for GlobalSearch quick actions', function () {
+    $blade = file_get_contents(__DIR__.'/../../resources/views/livewire/global-search.blade.php');
 
-    preg_match_all('/<button[^>]+(?:wire:click="navigateToResource|@click="\\$wire\\.navigateToResource)[^>]+>/s', $bladeFile, $quickActionButtons);
+    preg_match_all('/<button\b[^>]*@click="runPaletteTransition\(\(\) => \$wire\.navigateToResource\(item\.type\)\)"[^>]*>/s', $blade, $buttons);
 
-    expect($quickActionButtons[0])->not->toBeEmpty();
+    expect($buttons[0])->not->toBeEmpty();
 
-    foreach ($quickActionButtons[0] as $quickActionButton) {
-        expect($quickActionButton)
-            ->toContain('hover:bg-neutral-100 dark:hover:bg-coolgray-200')
-            ->toContain('focus:bg-neutral-100 dark:focus:bg-coolgray-200')
-            ->toContain('focus-visible:ring-coollabs dark:focus-visible:ring-warning')
-            ->not->toContain('hover:bg-warning-50')
-            ->not->toContain('hover:border-warning-500');
+    foreach ($buttons[0] as $button) {
+        expect($button)->toContain('search-result-item command-palette-item');
     }
 });
 
@@ -78,7 +73,6 @@ it('uses product logos for GlobalSearch database quick actions', function () {
     $bladeFile = file_get_contents(__DIR__.'/../../resources/views/livewire/global-search.blade.php');
 
     expect($bladeFile)
-        ->toContain('asset($item[\'logo\'])')
         ->toContain(":src=\"'/' + item.logo\"");
 
     foreach ([
@@ -99,23 +93,22 @@ it('uses product logos for GlobalSearch database quick actions', function () {
     }
 });
 
-it('uses neutral hover styling for GlobalSearch existing resource rows', function () {
-    $bladeFile = file_get_contents(__DIR__.'/../../resources/views/livewire/global-search.blade.php');
+it('uses shared palette styles with visible keyboard focus for existing resources', function () {
+    $blade = file_get_contents(__DIR__.'/../../resources/views/livewire/global-search.blade.php');
+    $css = file_get_contents(__DIR__.'/../../resources/css/app.css');
 
-    preg_match_all('/<a[^>]+(?:href="{{ \\$result\\[\'link\'\\]|:href="result\\.link)[^>]+>/s', $bladeFile, $existingResourceLinks);
+    preg_match_all('/<a\b[^>]*:href="result\.link[^"]*"[^>]*>/s', $blade, $links);
 
-    expect($existingResourceLinks[0])->not->toBeEmpty();
+    expect($links[0])->not->toBeEmpty();
 
-    foreach ($existingResourceLinks[0] as $existingResourceLink) {
-        expect($existingResourceLink)
-            ->toContain('hover:bg-neutral-100 dark:hover:bg-coolgray-200')
-            ->toContain('focus:bg-neutral-100 dark:focus:bg-coolgray-200')
-            ->toContain('focus-visible:ring-coollabs dark:focus-visible:ring-warning')
-            ->not->toContain('hover:bg-neutral-50')
-            ->not->toContain('focus:bg-warning')
-            ->not->toContain('hover:border-coollabs')
-            ->not->toContain('focus:border-warning');
+    foreach ($links[0] as $link) {
+        expect($link)->toContain('search-result-item command-palette-item');
     }
+
+    expect($css)
+        ->toMatch('/\.command-palette-item:hover\s*\{[^}]*background:\s*var\(--coollabs-fill\)/s')
+        ->toMatch('/a\.command-palette-item:focus-visible\s*\{[^}]*background:\s*color-mix\(/s')
+        ->toMatch('/\.command-palette-item:focus-visible::before\s*\{[^}]*background:\s*var\(--color-accent\)/s');
 });
 
 it('uses visible cropped SVG marks for wide database logos', function () {
@@ -143,25 +136,36 @@ it('uses visible cropped SVG marks for wide database logos', function () {
         ->not->toContain('height="90"');
 });
 
-it('uses cropped image assets instead of inline wide logos for GlobalSearch database icons', function () {
-    $globalSearchFile = file_get_contents(__DIR__.'/../../app/Livewire/GlobalSearch.php');
-    $bladeFile = file_get_contents(__DIR__.'/../../resources/views/livewire/global-search.blade.php');
+it('uses contained image assets instead of inline database logos', function () {
+    $globalSearch = file_get_contents(__DIR__.'/../../app/Livewire/GlobalSearch.php');
+    $blade = file_get_contents(__DIR__.'/../../resources/views/livewire/global-search.blade.php');
+    $css = file_get_contents(__DIR__.'/../../resources/css/app.css');
 
-    expect($bladeFile)
-        ->toContain('class="w-8 h-8 object-contain"')
-        ->toContain('class="w-8 h-8 object-contain"')
+    expect($blade)
+        ->toContain('class="command-palette-item-icon"')
+        ->toContain('<img :src="\'/\' + item.logo" :alt="item.name">')
         ->not->toContain('$item[\'logo_html\']')
         ->not->toContain('x-html="item.logo_html"');
 
-    expect($globalSearchFile)->not->toContain("'logo_html' =>");
+    expect($css)
+        ->toMatch('/\.command-palette-item-icon img\s*\{[^}]*object-fit:\s*contain;/s');
+
+    expect($globalSearch)->not->toContain("'logo_html' =>");
 });
 
-it('uses rounded yellow plus icons for GlobalSearch creatable actions without logos', function () {
-    $bladeFile = file_get_contents(__DIR__.'/../../resources/views/livewire/global-search.blade.php');
+it('uses neutral plus icons for GlobalSearch creatable actions without logos', function () {
+    $blade = file_get_contents(__DIR__.'/../../resources/views/livewire/global-search.blade.php');
+    $css = file_get_contents(__DIR__.'/../../resources/css/app.css');
 
-    expect($bladeFile)
-        ->toContain('rounded-full bg-warning/20 flex items-center justify-center')
-        ->toContain('class="h-6 w-6 text-warning"')
-        ->not->toContain('rounded-lg bg-warning-100 dark:bg-warning-900/40')
-        ->not->toContain('text-warning-600 dark:text-warning-400');
+    preg_match('/<template x-if="!item\.logo">(.*?)<\/template>/s', $blade, $fallback);
+
+    expect($fallback)->toHaveKey(1);
+    expect($fallback[1])
+        ->toContain('class="command-palette-item-icon is-create"')
+        ->toContain('d="M6 12H18"')
+        ->toContain('d="M12 18V6"');
+
+    expect($css)
+        ->toMatch('/\.command-palette-item-icon\.is-create\s*\{[^}]*background:\s*var\(--coollabs-recessed\)/s')
+        ->toMatch('/\.command-palette-item-icon\.is-create\s*\{[^}]*color:\s*var\(--coollabs-subtle\)/s');
 });
