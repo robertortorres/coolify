@@ -2403,3 +2403,76 @@ test('secret manager component rejects requests after sharing revocation', funct
     Queue::assertNothingPushed();
     Http::assertNothingSent();
 })->with(['loadKeys', 'importAll', 'removeSource', 'saveSettings', '$refresh']);
+
+test('secret manager API respects application sharing permissions', function (string $access) {
+    Process::fake();
+    Queue::fake();
+    Http::fake();
+
+    InstanceSettings::findOrFail(0)->forceFill([
+        'is_api_enabled' => true,
+        'allowed_ips' => '127.0.0.1',
+    ])->save();
+
+    $this->application->forceFill([
+        'visibility' => $access === 'private' ? 'private' : 'custom',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $source = IntegrationToken::query()->create([
+        'team_id' => $this->team->id,
+        'provider' => 'doppler',
+        'name' => 'VCC fictional API source',
+        'token' => 'dp.sa.fictional-test-token',
+        'capabilities' => ['secrets'],
+    ]);
+
+    $link = $this->application->secretManagerLink()->create([
+        'integration_token_id' => $source->id,
+        'settings' => ['project' => 'original-project', 'config' => 'original-config'],
+    ]);
+    $before = $link->fresh()->getRawOriginal();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    if ($access !== 'private') {
+        ApplicationShare::create([
+            'application_id' => $this->application->id,
+            'user_id' => $other->id,
+            'permission' => $access,
+            'granted_by' => $this->owner->id,
+        ]);
+    }
+
+    expect($other->can('view', $this->application))->toBe($access !== 'private');
+    expect($other->can('update', $this->application))->toBeFalse();
+
+    session(['currentTeam' => $this->team]);
+    $token = $other->createToken('restricted-secret-manager-test', ['*']);
+
+    auth()->logout();
+    auth()->forgetGuards();
+    Cache::flush();
+    Once::flush();
+
+    $response = $this->withToken($token->plainTextToken)
+        ->patchJson('/api/v1/applications/'.$this->application->uuid.'/secret-manager', [
+            'integration_token_uuid' => $source->uuid,
+            'settings' => ['project' => 'forbidden-project', 'config' => 'forbidden-config'],
+        ]);
+
+    expect($link->fresh())->not->toBeNull();
+    expect($link->fresh()->getRawOriginal())->toBe($before);
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+    Http::assertNothingSent();
+
+    if ($access === 'private') {
+        $response->assertNotFound()
+            ->assertExactJson(['message' => 'Application not found.']);
+    } else {
+        $response->assertForbidden();
+    }
+})->with(['private', 'read', 'operate']);

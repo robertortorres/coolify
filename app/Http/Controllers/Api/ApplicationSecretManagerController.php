@@ -49,6 +49,7 @@ class ApplicationSecretManagerController extends Controller
         }
 
         $application = Application::ownedByCurrentTeamAPI($teamId)
+            ->visibleTo($request->user())
             ->where('uuid', $request->route('uuid'))
             ->first();
 
