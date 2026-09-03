@@ -2476,3 +2476,157 @@ test('secret manager API respects application sharing permissions', function (st
         $response->assertForbidden();
     }
 })->with(['private', 'read', 'operate']);
+
+test('environment write endpoints hide inaccessible private applications', function (string $action) {
+    Process::fake();
+    Queue::fake();
+    Http::fake();
+
+    InstanceSettings::findOrFail(0)->forceFill([
+        'is_api_enabled' => true,
+        'allowed_ips' => '127.0.0.1',
+    ])->save();
+
+    $this->application->forceFill([
+        'visibility' => 'private',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $env = EnvironmentVariable::create([
+        'key' => 'VCC_PRIVATE_WRITE',
+        'value' => 'original-fictional-value',
+        'resourceable_type' => Application::class,
+        'resourceable_id' => $this->application->id,
+        'is_preview' => false,
+    ]);
+
+    $before = EnvironmentVariable::query()
+        ->orderBy('id')->get()->map->getRawOriginal()->all();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    expect($other->can('view', $this->application))->toBeFalse();
+    expect($other->can('manageEnvironment', $this->application))->toBeFalse();
+
+    session(['currentTeam' => $this->team]);
+    $token = $other->createToken('private-env-write-test', ['*']);
+
+    auth()->logout();
+    auth()->forgetGuards();
+    Cache::flush();
+    Once::flush();
+
+    $this->withToken($token->plainTextToken);
+    $url = '/api/v1/applications/'.$this->application->uuid.'/envs';
+
+    $response = match ($action) {
+        'create' => $this->postJson($url, [
+            'key' => 'VCC_FORBIDDEN_NEW',
+            'value' => 'forbidden-fictional-value',
+        ]),
+        'update' => $this->patchJson($url, [
+            'key' => $env->key,
+            'value' => 'forbidden-fictional-value',
+        ]),
+        'bulk' => $this->patchJson($url.'/bulk', [
+            'data' => [
+                ['key' => $env->key, 'value' => 'forbidden-fictional-value'],
+                ['key' => 'VCC_FORBIDDEN_NEW', 'value' => 'forbidden-fictional-value'],
+            ],
+        ]),
+        'delete' => $this->deleteJson($url.'/'.$env->uuid),
+    };
+
+    expect(EnvironmentVariable::query()
+        ->orderBy('id')->get()->map->getRawOriginal()->all())->toBe($before);
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+    Http::assertNothingSent();
+
+    $response->assertNotFound()->assertExactJson([
+        'message' => $action === 'delete'
+            ? 'Application not found.'
+            : 'Application not found',
+    ]);
+})->with(['create', 'update', 'bulk', 'delete']);
+
+test('private application owner can mutate environment variables through API', function (string $action) {
+    Process::fake();
+    Queue::fake();
+    Http::fake();
+
+    InstanceSettings::findOrFail(0)->forceFill([
+        'is_api_enabled' => true,
+        'allowed_ips' => '127.0.0.1',
+    ])->save();
+
+    $this->application->forceFill([
+        'visibility' => 'private',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $env = EnvironmentVariable::create([
+        'key' => 'VCC_OWNER_EXISTING',
+        'value' => 'original-fictional-value',
+        'resourceable_type' => Application::class,
+        'resourceable_id' => $this->application->id,
+        'is_preview' => false,
+    ]);
+
+    expect($this->owner->can('view', $this->application))->toBeTrue();
+    expect($this->owner->can('manageEnvironment', $this->application))->toBeTrue();
+
+    session(['currentTeam' => $this->team]);
+    $token = $this->owner->createToken('owner-env-write-test', ['*']);
+
+    auth()->logout();
+    auth()->forgetGuards();
+    Cache::flush();
+    Once::flush();
+
+    $this->withToken($token->plainTextToken);
+    $url = '/api/v1/applications/'.$this->application->uuid.'/envs';
+
+    $response = match ($action) {
+        'create' => $this->postJson($url, [
+            'key' => 'VCC_OWNER_NEW',
+            'value' => 'new-fictional-value',
+        ]),
+        'update' => $this->patchJson($url, [
+            'key' => $env->key,
+            'value' => 'updated-fictional-value',
+        ]),
+        'bulk' => $this->patchJson($url.'/bulk', [
+            'data' => [
+                ['key' => $env->key, 'value' => 'updated-fictional-value'],
+                ['key' => 'VCC_OWNER_NEW', 'value' => 'new-fictional-value'],
+            ],
+        ]),
+        'delete' => $this->deleteJson($url.'/'.$env->uuid),
+    };
+
+    $response->assertSuccessful();
+
+    if ($action === 'delete') {
+        expect($env->fresh())->toBeNull();
+    } else {
+        expect($env->fresh()->value)->toBe(
+            $action === 'create'
+                ? 'original-fictional-value'
+                : 'updated-fictional-value'
+        );
+    }
+
+    if (in_array($action, ['create', 'bulk'], true)) {
+        $created = $this->application->environment_variables()
+            ->where('key', 'VCC_OWNER_NEW')->firstOrFail();
+
+        expect($created->value)->toBe('new-fictional-value');
+    }
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+    Http::assertNothingSent();
+})->with(['create', 'update', 'bulk', 'delete']);

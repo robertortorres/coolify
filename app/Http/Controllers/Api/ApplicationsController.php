@@ -3339,7 +3339,10 @@ class ApplicationsController extends Controller
         if ($return instanceof JsonResponse) {
             return $return;
         }
-        $application = Application::ownedByCurrentTeamAPI($teamId)->where('uuid', $request->route('uuid'))->first();
+        $application = Application::ownedByCurrentTeamAPI($teamId)
+            ->visibleTo($request->user())
+            ->where('uuid', $request->route('uuid'))
+            ->first();
 
         if (! $application) {
             return response()->json([
@@ -3560,7 +3563,10 @@ class ApplicationsController extends Controller
         if ($return instanceof JsonResponse) {
             return $return;
         }
-        $application = Application::ownedByCurrentTeamAPI($teamId)->where('uuid', $request->route('uuid'))->first();
+        $application = Application::ownedByCurrentTeamAPI($teamId)
+            ->visibleTo($request->user())
+            ->where('uuid', $request->route('uuid'))
+            ->first();
 
         if (! $application) {
             return response()->json([
@@ -3775,7 +3781,10 @@ class ApplicationsController extends Controller
         if (is_null($teamId)) {
             return invalidTokenResponse();
         }
-        $application = Application::ownedByCurrentTeamAPI($teamId)->where('uuid', $request->route('uuid'))->first();
+        $application = Application::ownedByCurrentTeamAPI($teamId)
+            ->visibleTo($request->user())
+            ->where('uuid', $request->route('uuid'))
+            ->first();
 
         if (! $application) {
             return response()->json([
@@ -3952,7 +3961,10 @@ class ApplicationsController extends Controller
         if (is_null($teamId)) {
             return invalidTokenResponse();
         }
-        $application = Application::ownedByCurrentTeamAPI($teamId)->where('uuid', $request->route('uuid'))->first();
+        $application = Application::ownedByCurrentTeamAPI($teamId)
+            ->visibleTo($request->user())
+            ->where('uuid', $request->route('uuid'))
+            ->first();
 
         if (! $application) {
             return response()->json([
