@@ -2,6 +2,8 @@
 
 use App\Jobs\ApplicationDeploymentJob;
 use App\Livewire\GlobalSearch;
+use App\Livewire\Project\Shared\GetLogs;
+use App\Livewire\Project\Shared\Logs;
 use App\Livewire\Project\Shared\Tags;
 use App\Models\Application;
 use App\Models\ApplicationDeploymentQueue;
@@ -18,6 +20,7 @@ use App\Models\Team;
 use App\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Process\FakeProcessResult;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
@@ -26,6 +29,7 @@ use Illuminate\Support\Once;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 uses(RefreshDatabase::class);
 
@@ -1318,3 +1322,344 @@ test('tags component attaches an existing tag from its own team', function () {
     expect($this->application->tags()->pluck('tags.id')->all())
         ->toBe([$tag->id]);
 });
+
+test('get logs component refuses an inaccessible private application', function () {
+    $this->withoutVite();
+    Process::fake();
+    Queue::fake();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    $this->application->forceFill([
+        'visibility' => 'private',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $server = $this->application->destination->server;
+
+    $this->actingAs($other);
+    session(['currentTeam' => $this->team->fresh()]);
+    Cache::flush();
+    Once::flush();
+
+    expect($other->can('view', $this->application))->toBeFalse();
+    expect($other->teams()->whereKey($server->team_id)->exists())->toBeTrue();
+
+    $component = Livewire::test(
+        GetLogs::class,
+        [
+            'resource' => $this->application,
+            'server' => $server,
+            'container' => 'vcc-private-log-container',
+        ]
+    );
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+
+    $component->assertNotFound();
+});
+
+test('get logs component denies actions after sharing revocation', function (string $action) {
+    $this->withoutVite();
+    Process::fake();
+    Queue::fake();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    $this->application->forceFill([
+        'visibility' => 'custom',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $share = ApplicationShare::create([
+        'application_id' => $this->application->id,
+        'user_id' => $other->id,
+        'permission' => 'read',
+        'granted_by' => $this->owner->id,
+    ]);
+
+    $this->actingAs($other);
+    session(['currentTeam' => $this->team->fresh()]);
+    Cache::flush();
+    Once::flush();
+
+    expect($other->can('view', $this->application))->toBeTrue();
+
+    $component = Livewire::test(
+        GetLogs::class,
+        [
+            'resource' => $this->application,
+            'server' => $this->application->destination->server,
+            'container' => 'vcc-revoked-log-container',
+        ]
+    )->assertOk();
+
+    $share->delete();
+
+    expect($other->can('view', $this->application))->toBeFalse();
+
+    $component->call($action)->assertNotFound();
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+})->with(['getLogs', 'downloadAllLogs', 'copyLogs', '$refresh']);
+
+test('get logs shared access cannot persist timestamp settings', function (string $permission, string $action) {
+    $this->withoutVite();
+    Process::fake();
+    Queue::fake();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    $this->application->forceFill([
+        'visibility' => 'custom',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $this->application->settings->forceFill([
+        'is_include_timestamps' => false,
+    ])->save();
+
+    ApplicationShare::create([
+        'application_id' => $this->application->id,
+        'user_id' => $other->id,
+        'permission' => $permission,
+        'granted_by' => $this->owner->id,
+    ]);
+
+    $this->actingAs($other);
+    session(['currentTeam' => $this->team->fresh()]);
+    Cache::flush();
+    Once::flush();
+
+    expect($other->can('view', $this->application))->toBeTrue();
+    expect($other->can('update', $this->application))->toBeFalse();
+
+    $component = Livewire::test(
+        GetLogs::class,
+        [
+            'resource' => $this->application,
+            'server' => $this->application->destination->server,
+            'container' => 'vcc-timestamps-container',
+        ]
+    )->assertOk();
+
+    if ($action === 'instantSave') {
+        $component->set('showTimeStamps', true);
+    }
+
+    $component->call($action);
+
+    expect((bool) $this->application->settings()->firstOrFail()->is_include_timestamps)
+        ->toBeFalse();
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+
+    if ($action === 'instantSave') {
+        $component->assertForbidden();
+    } else {
+        $component->assertSet('showTimeStamps', false)
+            ->assertDispatched('error');
+    }
+})->with(['read', 'operate'])->with(['instantSave', 'toggleTimestamps']);
+
+test('get logs owner can persist timestamp settings', function () {
+    $this->withoutVite();
+    Process::fake();
+
+    $this->application->settings->forceFill([
+        'is_include_timestamps' => false,
+    ])->save();
+
+    expect($this->owner->can('update', $this->application))->toBeTrue();
+
+    Livewire::test(
+        GetLogs::class,
+        [
+            'resource' => $this->application,
+            'server' => $this->application->destination->server,
+            'container' => 'vcc-owner-timestamps',
+        ]
+    )
+        ->assertOk()
+        ->set('showTimeStamps', true)
+        ->call('instantSave')
+        ->assertOk()
+        ->assertNotDispatched('error');
+
+    expect((bool) $this->application->settings()->firstOrFail()->is_include_timestamps)
+        ->toBeTrue();
+
+    Process::assertNothingRan();
+});
+
+test('application logs page hides private applications', function () {
+    $this->withoutVite();
+    Process::fake();
+    Queue::fake();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    $this->application->forceFill([
+        'visibility' => 'private',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    Team::query()->update(['show_boarding' => false]);
+
+    $this->actingAs($other);
+    session(['currentTeam' => $this->team->fresh()]);
+    Cache::flush();
+    Once::flush();
+
+    expect($other->can('view', $this->application))->toBeFalse();
+
+    $environment = $this->application->environment;
+    $response = $this->get(route('project.application.logs', [
+        'project_uuid' => $environment->project->uuid,
+        'environment_uuid' => $environment->uuid,
+        'application_uuid' => $this->application->uuid,
+    ]));
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+
+    $response->assertNotFound();
+});
+
+test('get logs shared access reads and downloads simulated output', function (string $permission) {
+    $this->withoutVite();
+    Storage::fake('ssh-keys');
+    Queue::fake();
+    config(['constants.ssh.mux_enabled' => false]);
+
+    $key = PrivateKey::factory()->create([
+        'team_id' => $this->team->id,
+    ]);
+    $server = $this->application->destination->server;
+    $server->forceFill(['private_key_id' => $key->id])->save();
+    $server->settings->forceFill([
+        'is_reachable' => true,
+        'is_usable' => true,
+        'force_disabled' => false,
+    ])->save();
+    Server::flushIdentityMap();
+    $server = Server::with('settings')->findOrFail($server->id);
+
+    $this->application->forceFill([
+        'visibility' => 'custom',
+        'created_by' => $this->owner->id,
+    ])->save();
+    $this->application->settings->forceFill([
+        'is_include_timestamps' => false,
+    ])->save();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+    ApplicationShare::create([
+        'application_id' => $this->application->id,
+        'user_id' => $other->id,
+        'permission' => $permission,
+        'granted_by' => $this->owner->id,
+    ]);
+
+    $this->actingAs($other);
+    session(['currentTeam' => $this->team->fresh()]);
+    Cache::flush();
+    Once::flush();
+
+    expect($other->can('view', $this->application))->toBeTrue();
+    expect($other->can('update', $this->application))->toBeFalse();
+
+    Process::shouldReceive('timeout')
+        ->twice()->andReturnSelf();
+    Process::shouldReceive('run')
+        ->twice()
+        ->andReturnUsing(function (string $command, ?callable $callback = null) {
+            expect($command)->toContain('docker logs')
+                ->toContain('vcc-authorized-container');
+
+            if ($callback) {
+                $callback('out', 'vcc-simulated-log-output');
+            }
+
+            return new FakeProcessResult(command: $command);
+        });
+
+    Livewire::test(
+        GetLogs::class,
+        [
+            'resource' => $this->application,
+            'server' => $server,
+            'container' => 'vcc-authorized-container',
+        ]
+    )
+        ->assertOk()
+        ->call('getLogs', true)
+        ->assertSet('outputs', 'vcc-simulated-log-output')
+        ->call('downloadAllLogs')
+        ->assertReturned('vcc-simulated-log-output');
+
+    Queue::assertNothingPushed();
+})->with(['read', 'operate']);
+
+test('logs parent rechecks application access after revocation', function (string $action) {
+    $this->withoutVite();
+    Process::fake();
+    Queue::fake();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    $this->application->forceFill([
+        'visibility' => 'custom',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $share = ApplicationShare::create([
+        'application_id' => $this->application->id,
+        'user_id' => $other->id,
+        'permission' => 'read',
+        'granted_by' => $this->owner->id,
+    ]);
+
+    Team::query()->update(['show_boarding' => false]);
+    $this->actingAs($other);
+    session(['currentTeam' => $this->team->fresh()]);
+    Cache::flush();
+    Once::flush();
+
+    $environment = $this->application->environment;
+    $this->get(route('project.application.logs', [
+        'project_uuid' => $environment->project->uuid,
+        'environment_uuid' => $environment->uuid,
+        'application_uuid' => $this->application->uuid,
+    ]))->assertOk();
+
+    $component = new Logs;
+    $component->resource = $this->application;
+    $component->servers = collect([$this->application->destination->server]);
+
+    $share->delete();
+    expect($other->can('view', $this->application))->toBeFalse();
+
+    $status = null;
+    try {
+        $component->{$action}();
+    } catch (HttpExceptionInterface $exception) {
+        $status = $exception->getStatusCode();
+    }
+
+    expect($status)->toBe(404);
+    expect($component->containersLoaded)->toBeFalse();
+    expect($component->serverContainers)->toBe([]);
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+})->with(['hydrate', 'loadAllContainers', 'render']);
