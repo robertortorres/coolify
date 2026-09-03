@@ -248,15 +248,14 @@ class GlobalSearch extends Component
 
     private function loadSearchableItems()
     {
-        // Try to get from Redis cache first
-        $cacheKey = self::getCacheKey(auth()->user()->currentTeam()->id);
-
-        $this->allSearchableItems = Cache::remember($cacheKey, 300, function () {
+        // Resolve visibility for the current user without a shared cache.
+        $this->allSearchableItems = (function () {
             $items = collect();
             $team = auth()->user()->currentTeam();
 
             // Get all applications
             $applications = Application::ownedByCurrentTeam()
+                ->visibleTo(auth()->user())
                 ->with(['environment.project', 'previews:id,application_id,pull_request_id'])
                 ->get()
                 ->map(function ($app) {
@@ -532,7 +531,11 @@ class GlobalSearch extends Component
                 });
             // Get all projects
             $projects = Project::ownedByCurrentTeam()
-                ->withCount(['environments', 'applications', 'services'])
+                ->withCount([
+                    'environments',
+                    'applications' => fn ($query) => $query->visibleTo(auth()->user()),
+                    'services',
+                ])
                 ->get()
                 ->map(function ($project) {
                     $resourceCount = $project->applications_count + $project->services_count;
@@ -558,7 +561,10 @@ class GlobalSearch extends Component
             // Get all environments
             $environments = Environment::ownedByCurrentTeam()
                 ->with('project')
-                ->withCount(['applications', 'services'])
+                ->withCount([
+                    'applications' => fn ($query) => $query->visibleTo(auth()->user()),
+                    'services',
+                ])
                 ->get()
                 ->map(function ($environment) {
                     $resourceCount = $environment->applications_count + $environment->services_count;
@@ -739,11 +745,13 @@ class GlobalSearch extends Component
                 ->merge($environments);
 
             return $items->toArray();
-        });
+        })();
     }
 
     private function search()
     {
+        $this->loadSearchableItems();
+
         if (strlen($this->searchQuery) < 1) {
             $this->searchResults = [];
 

@@ -1,5 +1,6 @@
 <?php
 
+use App\Livewire\GlobalSearch;
 use App\Models\Application;
 use App\Models\ApplicationShare;
 use App\Models\Environment;
@@ -14,6 +15,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Once;
 use Illuminate\Validation\ValidationException;
+use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
 
@@ -467,3 +469,102 @@ test('API read token cannot expose another members private application', functio
     'member direct API' => ['member', 'direct'],
     'operator direct API' => ['operator', 'direct'],
 ]);
+
+test('global search hides private applications with cold or owner warmed cache', function (
+    string $role,
+    bool $warmCache
+) {
+    $this->withoutVite();
+    Cache::flush();
+
+    $this->application->forceFill([
+        'name' => 'vcc-private-search-probe',
+        'visibility' => 'private',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $visible = Application::factory()->create([
+        'name' => 'vcc-team-search-probe',
+        'environment_id' => $this->application->environment_id,
+        'destination_id' => $this->application->destination_id,
+        'destination_type' => $this->application->destination_type,
+    ]);
+
+    if ($warmCache) {
+        $ownerSearch = Livewire::test(GlobalSearch::class)
+            ->call('openSearchModal');
+
+        expect(json_encode($ownerSearch->get('allSearchableItems')))
+            ->toContain('vcc-private-search-probe');
+    }
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => $role]);
+    $this->actingAs($other);
+    session(['currentTeam' => $this->team->fresh()]);
+    Once::flush();
+
+    $search = Livewire::test(GlobalSearch::class)
+        ->call('openSearchModal');
+
+    $payload = json_encode($search->get('allSearchableItems'));
+
+    expect($payload)
+        ->toContain($visible->uuid)
+        ->not->toContain('vcc-private-search-probe')
+        ->not->toContain($this->application->uuid);
+
+    $search->set('searchQuery', 'vcc-private-search-probe');
+
+    expect(json_encode($search->get('searchResults')))
+        ->not->toContain('vcc-private-search-probe')
+        ->not->toContain($this->application->uuid);
+})->with([
+    'member cold cache' => ['member', false],
+    'operator cold cache' => ['operator', false],
+    'member owner warmed cache' => ['member', true],
+    'operator owner warmed cache' => ['operator', true],
+]);
+
+test('global search removes revoked grants on the next search', function (string $recipient) {
+    $this->withoutVite();
+    Cache::flush();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'operator']);
+
+    $this->application->forceFill([
+        'name' => 'vcc-revocation-search-probe',
+        'visibility' => 'custom',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $share = ApplicationShare::create([
+        'application_id' => $this->application->id,
+        $recipient => $recipient === 'user_id'
+            ? $other->id : $this->team->id,
+        'permission' => 'read',
+        'granted_by' => $this->owner->id,
+    ]);
+
+    $this->actingAs($other);
+    session(['currentTeam' => $this->team->fresh()]);
+    Once::flush();
+
+    $search = Livewire::test(GlobalSearch::class)
+        ->call('openSearchModal')
+        ->set('searchQuery', 'vcc-revocation');
+
+    expect(json_encode($search->get('searchResults')))
+        ->toContain($this->application->uuid);
+
+    $share->delete();
+
+    $search->set('searchQuery', 'vcc-revocation-search');
+
+    foreach (['allSearchableItems', 'searchResults'] as $property) {
+        expect(json_encode($search->get($property)))
+            ->not->toContain($this->application->uuid)
+            ->not->toContain('vcc-revocation-search-probe');
+    }
+})->with(['user_id', 'team_id']);
