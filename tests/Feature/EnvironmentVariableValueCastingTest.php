@@ -43,3 +43,23 @@ it('preserves intentional empty string environment variable values', function ()
     $env->refresh();
     expect($env->value)->toBe('');
 });
+
+it('preserves the literal flag as a boolean after database reload', function (bool $literal) {
+    $application = Application::factory()->create();
+
+    $env = EnvironmentVariable::create([
+        'key' => 'LITERAL_CAST_PROBE',
+        'value' => 'fictional-value',
+        'is_literal' => $literal,
+        'resourceable_type' => Application::class,
+        'resourceable_id' => $application->id,
+        'is_preview' => true,
+    ]);
+
+    expect($env->is_literal)->toBe($literal);
+
+    $env->refresh();
+
+    expect($env->is_literal)->toBe($literal)
+        ->and($env->toArray()['is_literal'])->toBe($literal);
+})->with([true, false]);

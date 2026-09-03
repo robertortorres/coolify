@@ -72,6 +72,7 @@ class EnvironmentVariable extends BaseModel
     protected $casts = [
         'key' => 'string',
         'value' => 'encrypted',
+        'is_literal' => 'boolean',
         'is_multiline' => 'boolean',
         'is_preview' => 'boolean',
         'is_runtime' => 'boolean',
