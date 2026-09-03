@@ -12,6 +12,7 @@ use App\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Once;
 use Illuminate\Validation\ValidationException;
 
 uses(RefreshDatabase::class);
@@ -412,4 +413,57 @@ test('web access hides private applications from other team members', function (
     'operator listing' => ['operator', 'listing'],
     'member direct URL' => ['member', 'direct'],
     'operator direct URL' => ['operator', 'direct'],
+]);
+
+test('API read token cannot expose another members private application', function (
+    string $role,
+    string $surface
+) {
+    InstanceSettings::findOrFail(0)->forceFill([
+        'is_api_enabled' => true,
+        'allowed_ips' => '127.0.0.1',
+    ])->save();
+
+    $this->application->forceFill([
+        'visibility' => 'private',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $visible = Application::factory()->create([
+        'environment_id' => $this->application->environment_id,
+        'destination_id' => $this->application->destination_id,
+        'destination_type' => $this->application->destination_type,
+    ]);
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => $role]);
+
+    session(['currentTeam' => $this->team]);
+    $token = $other->createToken('privacy-read-test', ['read']);
+
+    auth()->logout();
+    auth()->forgetGuards();
+    Cache::flush();
+    Once::flush();
+
+    $this->withToken($token->plainTextToken);
+
+    $this->getJson('/api/v1/applications/'.$visible->uuid)
+        ->assertSuccessful()
+        ->assertJsonFragment(['uuid' => $visible->uuid]);
+
+    if ($surface === 'listing') {
+        $this->getJson('/api/v1/applications')
+            ->assertSuccessful()
+            ->assertJsonFragment(['uuid' => $visible->uuid])
+            ->assertJsonMissing(['uuid' => $this->application->uuid]);
+    } else {
+        $this->getJson('/api/v1/applications/'.$this->application->uuid)
+            ->assertNotFound();
+    }
+})->with([
+    'member listing' => ['member', 'listing'],
+    'operator listing' => ['operator', 'listing'],
+    'member direct API' => ['member', 'direct'],
+    'operator direct API' => ['operator', 'direct'],
 ]);

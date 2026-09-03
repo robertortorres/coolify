@@ -257,6 +257,7 @@ class ApplicationsController extends Controller
             : [];
 
         $applications = Application::ownedByCurrentTeamAPI($teamId)
+            ->visibleTo($request->user())
             ->with($applicationRelations)
             ->when($tagName, function ($query, $tagName) {
                 $query->whereHas('tags', function ($query) use ($tagName) {
@@ -2371,7 +2372,11 @@ class ApplicationsController extends Controller
         if (! $uuid) {
             return response()->json(['message' => 'UUID is required.'], 400);
         }
-        $application = Application::ownedByCurrentTeamAPI($teamId)->with('settings')->where('uuid', $request->route('uuid'))->first();
+        $application = Application::ownedByCurrentTeamAPI($teamId)
+            ->visibleTo($request->user())
+            ->with('settings')
+            ->where('uuid', $request->route('uuid'))
+            ->first();
         if (! $application) {
             return response()->json(['message' => 'Application not found.'], 404);
         }
