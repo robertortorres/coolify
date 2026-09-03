@@ -81,7 +81,6 @@ class GlobalSearch extends Component
     public function openSearchModal()
     {
         $this->isModalOpen = true;
-        $this->loadSearchableItems();
         $this->loadCreatableItems();
         $this->dispatch('search-modal-opened');
     }
@@ -92,6 +91,7 @@ class GlobalSearch extends Component
         $this->searchQuery = '';
         $this->previousTrimmedQuery = '';
         $this->searchResults = [];
+        $this->allSearchableItems = [];
     }
 
     public static function getCacheKey($teamId)
@@ -146,15 +146,11 @@ class GlobalSearch extends Component
                 $this->cancelResourceSelection();
             }
 
-            // Also search for existing resources that match the query
-            // This allows users to find resources with "new" in their name
-            $this->search();
         } else {
             $this->isCreateMode = false;
             $this->creatableItems = [];
             $this->autoOpenResource = null;
             $this->isSelectingResource = false;
-            $this->search();
         }
     }
 
@@ -1530,6 +1526,13 @@ class GlobalSearch extends Component
 
     public function render()
     {
+        if ($this->isModalOpen) {
+            $this->search();
+        } else {
+            $this->searchResults = [];
+            $this->allSearchableItems = [];
+        }
+
         return view('livewire.global-search');
     }
 }

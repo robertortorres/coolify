@@ -568,3 +568,54 @@ test('global search removes revoked grants on the next search', function (string
             ->not->toContain('vcc-revocation-search-probe');
     }
 })->with(['user_id', 'team_id']);
+
+test('global search lifecycle drops revoked application data', function (string $action) {
+    $this->withoutVite();
+    Cache::flush();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'operator']);
+
+    $this->application->forceFill([
+        'name' => 'vcc-lifecycle-search-probe',
+        'visibility' => 'custom',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $share = ApplicationShare::create([
+        'application_id' => $this->application->id,
+        'user_id' => $other->id,
+        'permission' => 'read',
+        'granted_by' => $this->owner->id,
+    ]);
+
+    $this->actingAs($other);
+    session(['currentTeam' => $this->team->fresh()]);
+    Once::flush();
+
+    $search = Livewire::test(GlobalSearch::class)
+        ->call('openSearchModal')
+        ->set('searchQuery', 'vcc-lifecycle');
+
+    expect(json_encode($search->get('searchResults')))
+        ->toContain($this->application->uuid);
+
+    $share->delete();
+
+    if ($action === 'close') {
+        $search->call('closeSearchModal')
+            ->assertSet('isModalOpen', false);
+    } elseif ($action === 'reopen') {
+        $search->call('closeSearchModal')
+            ->call('openSearchModal')
+            ->assertSet('isModalOpen', true);
+    } else {
+        $search->call('$refresh');
+    }
+
+    foreach (['allSearchableItems', 'searchResults'] as $property) {
+        expect(json_encode($search->get($property)))
+            ->not->toContain($this->application->uuid)
+            ->not->toContain('vcc-lifecycle-search-probe');
+    }
+})->with(['close', 'reopen', 'refresh']);
