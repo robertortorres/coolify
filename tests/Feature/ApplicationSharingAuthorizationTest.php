@@ -7,6 +7,7 @@ use App\Livewire\Project\Shared\EnvironmentVariable\All;
 use App\Livewire\Project\Shared\EnvironmentVariable\Show;
 use App\Livewire\Project\Shared\GetLogs;
 use App\Livewire\Project\Shared\Logs;
+use App\Livewire\Project\Shared\SecretManagerLinks;
 use App\Livewire\Project\Shared\Tags;
 use App\Models\Application;
 use App\Models\ApplicationDeploymentQueue;
@@ -15,6 +16,7 @@ use App\Models\ApplicationShare;
 use App\Models\Environment;
 use App\Models\EnvironmentVariable;
 use App\Models\InstanceSettings;
+use App\Models\IntegrationToken;
 use App\Models\PrivateKey;
 use App\Models\Project;
 use App\Models\Server;
@@ -2306,3 +2308,98 @@ test('environment Add rechecks permissions after visibility changes', function (
     Http::assertNothingSent();
 })->with([false, true])
     ->with(['submit', 'fetchSecretManagerKeys', '$refresh']);
+
+test('secret manager component refuses an inaccessible private application', function () {
+    $this->withoutVite();
+    Process::fake();
+    Queue::fake();
+    Http::fake();
+
+    $this->application->forceFill([
+        'visibility' => 'private',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    $this->actingAs($other);
+    session(['currentTeam' => $this->team->fresh()]);
+    Cache::flush();
+    Once::flush();
+
+    expect($other->can('view', $this->application))->toBeFalse();
+
+    $component = Livewire::test(
+        SecretManagerLinks::class,
+        ['resource' => $this->application]
+    );
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+    Http::assertNothingSent();
+
+    $component->assertNotFound();
+});
+
+test('secret manager component rejects requests after sharing revocation', function (string $action) {
+    $this->withoutVite();
+    Process::fake();
+    Queue::fake();
+    Http::fake();
+
+    $this->application->forceFill([
+        'visibility' => 'custom',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $token = IntegrationToken::query()->create([
+        'team_id' => $this->team->id,
+        'provider' => 'doppler',
+        'name' => 'VCC fictional source',
+        'token' => 'dp.st.fictional-test-token',
+        'capabilities' => ['secrets'],
+    ]);
+
+    $link = $this->application->secretManagerLink()->create([
+        'integration_token_id' => $token->id,
+    ]);
+    $before = $link->fresh()->getRawOriginal();
+    $envCount = $this->application->environment_variables()->count();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    $share = ApplicationShare::create([
+        'application_id' => $this->application->id,
+        'user_id' => $other->id,
+        'permission' => 'read',
+        'granted_by' => $this->owner->id,
+    ]);
+
+    $this->actingAs($other);
+    session(['currentTeam' => $this->team->fresh()]);
+    Cache::flush();
+    Once::flush();
+
+    expect($other->can('view', $this->application))->toBeTrue();
+
+    $component = Livewire::test(
+        SecretManagerLinks::class,
+        ['resource' => $this->application]
+    )->assertOk();
+
+    $share->delete();
+
+    expect($other->can('view', $this->application))->toBeFalse();
+
+    $component->call($action)->assertNotFound();
+
+    expect($link->fresh())->not->toBeNull();
+    expect($link->fresh()->getRawOriginal())->toBe($before);
+    expect($this->application->environment_variables()->count())->toBe($envCount);
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+    Http::assertNothingSent();
+})->with(['loadKeys', 'importAll', 'removeSource', 'saveSettings', '$refresh']);

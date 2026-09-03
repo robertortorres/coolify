@@ -271,7 +271,7 @@ test('members without update permission cannot save a source', function () {
 
     Livewire::test(SecretManagerLinks::class, ['resource' => $this->application])
         ->set('integration_token_uuid', $this->token->uuid)
-        ->assertDispatched('error', 'You need at least admin or owner permissions to update this application.');
+        ->assertDispatched('error', 'You need at least operator permissions to update this application.');
 
     $this->assertDatabaseCount('secret_manager_links', 0);
 });

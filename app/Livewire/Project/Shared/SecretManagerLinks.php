@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Project\Shared;
 
+use App\Models\Application;
 use App\Models\IntegrationToken;
 use Illuminate\Contracts\View\View;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -33,6 +34,18 @@ class SecretManagerLinks extends Component
 
     public string $search = '';
 
+    private function ensureApplicationAccess(): void
+    {
+        if ($this->resource instanceof Application) {
+            abort_unless(auth()->user()?->can('view', $this->resource), 404);
+        }
+    }
+
+    public function hydrate(): void
+    {
+        $this->ensureApplicationAccess();
+    }
+
     public function mount(): void
     {
         $this->loadData();
@@ -40,6 +53,8 @@ class SecretManagerLinks extends Component
 
     private function loadData(): void
     {
+        $this->ensureApplicationAccess();
+
         $this->link = $this->resource->secretManagerLink()->with('integrationToken')->first();
         $this->availableTokens = IntegrationToken::ownedByCurrentTeam()
             ->whereIn('provider', IntegrationToken::SECRET_MANAGER_PROVIDERS)
@@ -282,6 +297,8 @@ class SecretManagerLinks extends Component
 
     public function render(): View
     {
+        $this->ensureApplicationAccess();
+
         return view('livewire.project.shared.secret-manager-links', [
             'selectedToken' => $this->selectedToken,
             'filteredKeys' => $this->filteredKeys,
