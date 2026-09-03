@@ -2,6 +2,7 @@
 
 use App\Jobs\ApplicationDeploymentJob;
 use App\Livewire\GlobalSearch;
+use App\Livewire\Project\Shared\Tags;
 use App\Models\Application;
 use App\Models\ApplicationDeploymentQueue;
 use App\Models\ApplicationPreview;
@@ -1203,3 +1204,117 @@ test('application tag endpoints hide private applications', function (string $ac
     $response->assertNotFound()
         ->assertExactJson(['message' => 'Application not found.']);
 })->with(['list', 'create', 'delete']);
+
+test('tags component refuses to mount an inaccessible private application', function () {
+    $this->withoutVite();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    $this->application->forceFill([
+        'visibility' => 'private',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $tag = Tag::create([
+        'name' => 'vcc-private-component-tag',
+        'team_id' => $this->team->id,
+    ]);
+    $this->application->tags()->attach($tag->id);
+
+    $this->actingAs($other);
+    session(['currentTeam' => $this->team->fresh()]);
+    Cache::flush();
+    Once::flush();
+
+    expect($other->can('view', $this->application))->toBeFalse();
+
+    Livewire::test(
+        Tags::class,
+        ['resource' => $this->application]
+    )->assertNotFound();
+});
+
+test('tags component rejects requests after access revocation', function (string $action) {
+    $this->withoutVite();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    $this->application->forceFill([
+        'visibility' => 'custom',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $share = ApplicationShare::create([
+        'application_id' => $this->application->id,
+        'user_id' => $other->id,
+        'permission' => 'read',
+        'granted_by' => $this->owner->id,
+    ]);
+
+    $this->actingAs($other);
+    session(['currentTeam' => $this->team->fresh()]);
+    Cache::flush();
+    Once::flush();
+
+    $component = Livewire::test(
+        Tags::class,
+        ['resource' => $this->application]
+    )->assertOk();
+
+    $share->delete();
+
+    expect($other->can('view', $this->application))->toBeFalse();
+
+    $component->call($action)->assertNotFound();
+})->with(['loadTags', 'refresh', '$refresh']);
+
+test('tags component cannot attach a tag from another team', function () {
+    $this->withoutVite();
+
+    $foreignTeam = Team::factory()->create();
+    $tag = Tag::create([
+        'name' => 'vcc-foreign-team-tag',
+        'team_id' => $foreignTeam->id,
+    ]);
+
+    expect($this->owner->can('update', $this->application))->toBeTrue();
+
+    $component = Livewire::test(
+        Tags::class,
+        ['resource' => $this->application]
+    )->assertOk();
+
+    $component->call('addTag', (string) $tag->id, $tag->name);
+
+    expect($this->application->tags()->count())->toBe(0);
+    expect(Tag::findOrFail($tag->id)->team_id)
+        ->toBe($foreignTeam->id);
+
+    $component->assertNotDispatched('success')
+        ->assertDispatched('error');
+});
+
+test('tags component attaches an existing tag from its own team', function () {
+    $this->withoutVite();
+
+    $tag = Tag::create([
+        'name' => 'vcc-own-team-tag',
+        'team_id' => $this->team->id,
+    ]);
+
+    expect($this->owner->can('update', $this->application))->toBeTrue();
+
+    Livewire::test(
+        Tags::class,
+        ['resource' => $this->application]
+    )
+        ->assertOk()
+        ->call('addTag', (string) $tag->id, $tag->name)
+        ->assertNotDispatched('error')
+        ->assertDispatched('success');
+
+    expect($this->application->tags()->pluck('tags.id')->all())
+        ->toBe([$tag->id]);
+});

@@ -21,6 +21,11 @@ class Tags extends Component
 
     public $filteredTags = [];
 
+    public function hydrate()
+    {
+        abort_unless(auth()->user()?->can('view', $this->resource), 404);
+    }
+
     public function mount()
     {
         $this->loadTags();
@@ -28,6 +33,8 @@ class Tags extends Component
 
     public function loadTags()
     {
+        abort_unless(auth()->user()?->can('view', $this->resource), 404);
+
         $this->tags = Tag::ownedByCurrentTeam()->get();
         $this->filteredTags = $this->tags->filter(function ($tag) {
             return ! $this->resource->tags->contains($tag);
@@ -71,7 +78,16 @@ class Tags extends Component
     {
         try {
             $this->authorize('update', $this->resource);
-            $name = strip_tags($name);
+
+            $tag = Tag::ownedByCurrentTeam()->find($id);
+            if (! $tag) {
+                $this->dispatch('error', 'Tag not found.');
+
+                return;
+            }
+
+            $id = (string) $tag->id;
+            $name = strip_tags($tag->name);
             if ($this->resource->tags()->where('id', $id)->exists()) {
                 $this->dispatch('error', 'Duplicate tags.', "Tag <span class='dark:text-warning'>$name</span> already added.");
 
