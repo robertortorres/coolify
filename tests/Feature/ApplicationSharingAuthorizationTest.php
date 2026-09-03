@@ -1145,3 +1145,61 @@ test('tag deployment queues only applications with operate access', function () 
     );
     Process::assertNothingRan();
 });
+
+test('application tag endpoints hide private applications', function (string $action) {
+    Process::fake();
+    Queue::fake();
+
+    InstanceSettings::findOrFail(0)->forceFill([
+        'is_api_enabled' => true,
+        'allowed_ips' => '127.0.0.1',
+    ])->save();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    $this->application->forceFill([
+        'visibility' => 'private',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $tag = Tag::create([
+        'name' => 'vcc-existing-private-tag',
+        'team_id' => $this->team->id,
+    ]);
+    $this->application->tags()->attach($tag->id);
+    $tagCount = Tag::count();
+
+    expect($other->can('view', $this->application))->toBeFalse();
+    expect($other->can('update', $this->application))->toBeFalse();
+
+    session(['currentTeam' => $this->team]);
+    $token = $other->createToken('private-tag-endpoints-test', ['*']);
+
+    auth()->logout();
+    auth()->forgetGuards();
+    Cache::flush();
+    Once::flush();
+
+    $this->withToken($token->plainTextToken);
+    $url = '/api/v1/applications/'.$this->application->uuid.'/tags';
+
+    $response = match ($action) {
+        'list' => $this->getJson($url),
+        'create' => $this->postJson($url, [
+            'tag_name' => 'vcc-forbidden-new-tag',
+        ]),
+        'delete' => $this->deleteJson($url.'/'.$tag->uuid),
+    };
+
+    expect(Tag::count())->toBe($tagCount);
+    expect(Tag::whereKey($tag->id)->exists())->toBeTrue();
+    expect($this->application->tags()->pluck('tags.id')->all())
+        ->toBe([$tag->id]);
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+
+    $response->assertNotFound()
+        ->assertExactJson(['message' => 'Application not found.']);
+})->with(['list', 'create', 'delete']);

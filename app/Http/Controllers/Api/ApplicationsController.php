@@ -80,7 +80,10 @@ class ApplicationsController extends Controller
 
     protected function findTaggableResource(string $uuid, int|string $teamId): mixed
     {
-        return Application::ownedByCurrentTeamAPI($teamId)->where('uuid', $uuid)->first();
+        return Application::ownedByCurrentTeamAPI($teamId)
+            ->visibleTo(auth()->user())
+            ->where('uuid', $uuid)
+            ->first();
     }
 
     protected function tagResourceNotFoundMessage(): string
