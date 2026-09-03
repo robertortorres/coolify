@@ -461,6 +461,33 @@ class DeployController extends Controller
         foreach ($uuids as $uuid) {
             $resource = getResourceByUuid($uuid, $teamId);
             if ($resource) {
+                // Authorize before reading or changing application previews.
+                if ($resource instanceof Application) {
+                    if (! auth()->user()->can('view', $resource)) {
+                        continue;
+                    }
+
+                    if (! auth()->user()->can('deploy', $resource)) {
+                        $deployments->push([
+                            'message' => 'Unauthorized to deploy this application.',
+                            'resource_uuid' => $uuid,
+                        ]);
+
+                        continue;
+                    }
+                }
+
+                if ($resource instanceof Application
+                    && $dockerTag !== null
+                    && $resource->build_pack !== 'dockerimage') {
+                    $deployments->push([
+                        'message' => 'docker_tag can only be used with Docker Image applications.',
+                        'resource_uuid' => $uuid,
+                    ]);
+
+                    continue;
+                }
+
                 $dockerTagForResource = $dockerTag;
                 if ($pr !== 0) {
                     $preview = null;

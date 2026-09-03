@@ -3,6 +3,7 @@
 use App\Livewire\GlobalSearch;
 use App\Models\Application;
 use App\Models\ApplicationDeploymentQueue;
+use App\Models\ApplicationPreview;
 use App\Models\ApplicationShare;
 use App\Models\Environment;
 use App\Models\InstanceSettings;
@@ -937,3 +938,76 @@ test('operate sharing permits deployment cancellation through API', function (st
     Process::assertNothingRan();
     Queue::assertNothingPushed();
 })->with(['user_id', 'team_id']);
+
+test('unauthorized deployment cannot change docker image preview', function (string $visibility, bool $existing) {
+    Process::fake();
+    Queue::fake();
+
+    InstanceSettings::findOrFail(0)->forceFill([
+        'is_api_enabled' => true,
+        'allowed_ips' => '127.0.0.1',
+    ])->save();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    $this->application->forceFill([
+        'visibility' => $visibility,
+        'created_by' => $this->owner->id,
+        'build_pack' => 'dockerimage',
+    ])->save();
+
+    if ($visibility === 'custom') {
+        ApplicationShare::create([
+            'application_id' => $this->application->id,
+            'user_id' => $other->id,
+            'permission' => 'read',
+            'granted_by' => $this->owner->id,
+        ]);
+    }
+
+    expect($other->can('deploy', $this->application))->toBeFalse();
+
+    $preview = $existing ? ApplicationPreview::create([
+        'application_id' => $this->application->id,
+        'pull_request_id' => 42,
+        'pull_request_html_url' => '',
+        'docker_registry_image_tag' => 'original-tag',
+    ]) : null;
+
+    session(['currentTeam' => $this->team]);
+    $token = $other->createToken('preview-authorization-test', ['*']);
+
+    auth()->logout();
+    auth()->forgetGuards();
+    Cache::flush();
+    Once::flush();
+
+    $response = $this->withToken($token->plainTextToken)
+        ->postJson('/api/v1/deploy', [
+            'uuid' => $this->application->uuid,
+            'pull_request_id' => 42,
+            'docker_tag' => 'unauthorized-tag',
+        ]);
+
+    if ($existing) {
+        expect($preview->fresh()->docker_registry_image_tag)->toBe('original-tag');
+    }
+
+    expect($this->application->previews()->count())->toBe($existing ? 1 : 0);
+    expect(ApplicationDeploymentQueue::count())->toBe(0);
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+
+    if ($visibility === 'private') {
+        $response->assertNotFound()
+            ->assertExactJson(['message' => 'No resources found.']);
+    } else {
+        $response->assertOk()->assertExactJson([
+            'deployments' => [[
+                'message' => 'Unauthorized to deploy this application.',
+                'resource_uuid' => $this->application->uuid,
+            ]],
+        ]);
+    }
+})->with(['private', 'custom'])->with([true, false]);
