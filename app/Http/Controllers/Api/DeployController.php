@@ -73,7 +73,14 @@ class DeployController extends Controller
             return invalidTokenResponse();
         }
         $servers = Server::whereTeamId($teamId)->get();
-        $deployments_per_server = ApplicationDeploymentQueue::whereIn('status', ['in_progress', 'queued'])->whereIn('server_id', $servers->pluck('id'))->get()->sortBy('id');
+        $deployments_per_server = ApplicationDeploymentQueue::whereIn('status', ['in_progress', 'queued'])
+            ->whereIn('server_id', $servers->pluck('id'))
+            ->whereHas('application', function ($query) use ($request, $teamId) {
+                $query->visibleTo($request->user())
+                    ->whereRelation('environment.project', 'team_id', $teamId);
+            })
+            ->get()
+            ->sortBy('id');
         $deployments_per_server = $deployments_per_server->map(function ($deployment) {
             return $this->removeSensitiveData($deployment);
         });
@@ -135,6 +142,13 @@ class DeployController extends Controller
         }
         $application = $deployment->application;
         if (! $application || data_get($application->team(), 'id') !== (int) $teamId) {
+            return response()->json(['message' => 'Deployment not found.'], 404);
+        }
+
+        if (! Application::query()
+            ->visibleTo($request->user())
+            ->whereKey($application->getKey())
+            ->exists()) {
             return response()->json(['message' => 'Deployment not found.'], 404);
         }
 

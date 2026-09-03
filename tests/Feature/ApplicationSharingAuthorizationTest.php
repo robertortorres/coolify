@@ -2,6 +2,7 @@
 
 use App\Livewire\GlobalSearch;
 use App\Models\Application;
+use App\Models\ApplicationDeploymentQueue;
 use App\Models\ApplicationShare;
 use App\Models\Environment;
 use App\Models\InstanceSettings;
@@ -13,7 +14,10 @@ use App\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Once;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 
@@ -619,3 +623,81 @@ test('global search lifecycle drops revoked application data', function (string 
             ->not->toContain('vcc-lifecycle-search-probe');
     }
 })->with(['close', 'reopen', 'refresh']);
+
+test('deployment API hides private applications from other team members', function (
+    string $role,
+    string $surface
+) {
+    Process::fake();
+    Queue::fake();
+
+    InstanceSettings::findOrFail(0)->forceFill([
+        'is_api_enabled' => true,
+        'allowed_ips' => '127.0.0.1',
+    ])->save();
+
+    $this->application->forceFill([
+        'visibility' => 'private',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $visible = Application::factory()->create([
+        'environment_id' => $this->application->environment_id,
+        'destination_id' => $this->application->destination_id,
+        'destination_type' => $this->application->destination_type,
+    ]);
+
+    $serverId = $this->application->destination->server_id;
+    $deployments = [];
+
+    foreach ([$this->application, $visible] as $application) {
+        $deployments[] = ApplicationDeploymentQueue::create([
+            'deployment_uuid' => (string) Str::uuid(),
+            'application_id' => $application->id,
+            'server_id' => $serverId,
+            'status' => 'queued',
+        ]);
+    }
+
+    [$privateDeployment, $visibleDeployment] = $deployments;
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => $role]);
+    session(['currentTeam' => $this->team]);
+    $token = $other->createToken('deployment-privacy-test', ['read']);
+
+    auth()->logout();
+    auth()->forgetGuards();
+    Cache::flush();
+    Once::flush();
+
+    $this->withToken($token->plainTextToken);
+
+    $this->getJson('/api/v1/deployments/'.$visibleDeployment->deployment_uuid)
+        ->assertSuccessful()
+        ->assertJsonFragment([
+            'deployment_uuid' => $visibleDeployment->deployment_uuid,
+        ]);
+
+    if ($surface === 'listing') {
+        $this->getJson('/api/v1/deployments')
+            ->assertSuccessful()
+            ->assertJsonFragment([
+                'deployment_uuid' => $visibleDeployment->deployment_uuid,
+            ])
+            ->assertJsonMissing([
+                'deployment_uuid' => $privateDeployment->deployment_uuid,
+            ]);
+    } else {
+        $this->getJson('/api/v1/deployments/'.$privateDeployment->deployment_uuid)
+            ->assertNotFound();
+    }
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+})->with([
+    'member listing' => ['member', 'listing'],
+    'operator listing' => ['operator', 'listing'],
+    'member detail' => ['member', 'detail'],
+    'operator detail' => ['operator', 'detail'],
+]);
