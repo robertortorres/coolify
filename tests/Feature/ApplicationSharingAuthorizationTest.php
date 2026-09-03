@@ -1715,3 +1715,70 @@ test('environment API hides private applications regardless of token sensitivity
     $response->assertNotFound()
         ->assertExactJson(['message' => 'Application not found']);
 })->with([false, true]);
+
+test('shared application access cannot mutate environment variables', function (string $permission, string $action) {
+    Process::fake();
+    Queue::fake();
+
+    InstanceSettings::findOrFail(0)->forceFill([
+        'is_api_enabled' => true,
+        'allowed_ips' => '127.0.0.1',
+    ])->save();
+
+    $this->application->forceFill([
+        'visibility' => 'custom',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $env = EnvironmentVariable::create([
+        'key' => 'VCC_EXISTING',
+        'value' => 'original-fictional-value',
+        'resourceable_type' => Application::class,
+        'resourceable_id' => $this->application->id,
+        'is_preview' => false,
+        'is_shown_once' => false,
+    ]);
+    $before = EnvironmentVariable::query()
+        ->orderBy('id')->get()->map->getRawOriginal()->all();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+    ApplicationShare::create([
+        'application_id' => $this->application->id,
+        'user_id' => $other->id,
+        'permission' => $permission,
+        'granted_by' => $this->owner->id,
+    ]);
+
+    expect($other->can('view', $this->application))->toBeTrue();
+    expect($other->can('manageEnvironment', $this->application))->toBeFalse();
+
+    session(['currentTeam' => $this->team]);
+    $token = $other->createToken('shared-env-write-test', ['*']);
+
+    auth()->logout();
+    auth()->forgetGuards();
+    Cache::flush();
+    Once::flush();
+
+    $this->withToken($token->plainTextToken);
+    $url = '/api/v1/applications/'.$this->application->uuid.'/envs';
+    $change = ['key' => 'VCC_EXISTING', 'value' => 'forbidden-change'];
+    $new = ['key' => 'VCC_NEW', 'value' => 'forbidden-new-value'];
+
+    $response = match ($action) {
+        'create' => $this->postJson($url, $new),
+        'update' => $this->patchJson($url, $change),
+        'bulk' => $this->patchJson($url.'/bulk', ['data' => [$change, $new]]),
+        'delete' => $this->deleteJson($url.'/'.$env->uuid),
+    };
+
+    $after = EnvironmentVariable::query()
+        ->orderBy('id')->get()->map->getRawOriginal()->all();
+    expect($after)->toBe($before);
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+
+    $response->assertForbidden();
+})->with(['read', 'operate'])->with(['create', 'update', 'bulk', 'delete']);
