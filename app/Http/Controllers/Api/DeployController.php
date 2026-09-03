@@ -246,6 +246,22 @@ class DeployController extends Controller
             return response()->json(['message' => 'You do not have permission to cancel this deployment.'], 403);
         }
 
+        // Authorize application access before changing deployment state.
+        $application = Application::ownedByCurrentTeamAPI($teamId)
+            ->visibleTo($request->user())
+            ->whereKey($deployment->application_id)
+            ->first();
+
+        if (! $application) {
+            return response()->json(['message' => 'Deployment not found.'], 404);
+        }
+
+        if (! $request->user()->can('manageDeployments', $application)) {
+            return response()->json([
+                'message' => 'You do not have permission to cancel this deployment.',
+            ], 403);
+        }
+
         // Check if deployment can be cancelled (must be queued or in_progress)
         $cancellableStatuses = [
             ApplicationDeploymentStatus::QUEUED->value,

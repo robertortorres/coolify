@@ -16,11 +16,18 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
+    Server::flushIdentityMap();
+    Process::fake();
+    Queue::fake();
+    Storage::fake('ssh-keys');
+
     config([
+        'constants.ssh.mux_enabled' => false,
         'cache.default' => 'array',
         'session.driver' => 'array',
         'queue.default' => 'sync',
@@ -42,6 +49,19 @@ beforeEach(function () {
 
     // Create a server for the team
     $this->server = Server::factory()->create(['team_id' => $this->team->id]);
+
+    // Application fixture for deployment authorization.
+    $destination = StandaloneDocker::where('server_id', $this->server->id)
+        ->firstOrFail();
+    $project = Project::factory()->create(['team_id' => $this->team->id]);
+    $environment = Environment::factory()->create(['project_id' => $project->id]);
+
+    $this->application = Application::factory()->create([
+        'environment_id' => $environment->id,
+        'destination_id' => $destination->id,
+        'destination_type' => $destination->getMorphClass(),
+    ]);
+
 });
 
 describe('POST /api/v1/deployments/{uuid}/cancel', function () {
@@ -69,7 +89,7 @@ describe('POST /api/v1/deployments/{uuid}/cancel', function () {
         // Create a deployment on the other team's server
         $deployment = ApplicationDeploymentQueue::create([
             'deployment_uuid' => 'test-deployment-uuid',
-            'application_id' => 1,
+            'application_id' => $this->application->id,
             'server_id' => $otherServer->id,
             'status' => ApplicationDeploymentStatus::IN_PROGRESS->value,
         ]);
@@ -86,7 +106,7 @@ describe('POST /api/v1/deployments/{uuid}/cancel', function () {
     test('returns 400 when deployment is already finished', function () {
         $deployment = ApplicationDeploymentQueue::create([
             'deployment_uuid' => 'finished-deployment-uuid',
-            'application_id' => 1,
+            'application_id' => $this->application->id,
             'server_id' => $this->server->id,
             'status' => ApplicationDeploymentStatus::FINISHED->value,
         ]);
@@ -103,7 +123,7 @@ describe('POST /api/v1/deployments/{uuid}/cancel', function () {
     test('returns 400 when deployment is already failed', function () {
         $deployment = ApplicationDeploymentQueue::create([
             'deployment_uuid' => 'failed-deployment-uuid',
-            'application_id' => 1,
+            'application_id' => $this->application->id,
             'server_id' => $this->server->id,
             'status' => ApplicationDeploymentStatus::FAILED->value,
         ]);
@@ -120,7 +140,7 @@ describe('POST /api/v1/deployments/{uuid}/cancel', function () {
     test('returns 400 when deployment is already cancelled', function () {
         $deployment = ApplicationDeploymentQueue::create([
             'deployment_uuid' => 'cancelled-deployment-uuid',
-            'application_id' => 1,
+            'application_id' => $this->application->id,
             'server_id' => $this->server->id,
             'status' => ApplicationDeploymentStatus::CANCELLED_BY_USER->value,
         ]);
@@ -139,7 +159,7 @@ describe('POST /api/v1/deployments/{uuid}/cancel', function () {
         $buildServer = Server::factory()->create(['team_id' => $otherTeam->id]);
         $deployment = ApplicationDeploymentQueue::create([
             'deployment_uuid' => 'queued-deployment-uuid',
-            'application_id' => 1,
+            'application_id' => $this->application->id,
             'server_id' => $this->server->id,
             'build_server_id' => $buildServer->id,
             'status' => ApplicationDeploymentStatus::QUEUED->value,
@@ -208,7 +228,7 @@ describe('POST /api/v1/deployments/{uuid}/cancel', function () {
 
         $deployment = ApplicationDeploymentQueue::create([
             'deployment_uuid' => 'atomic-cancellation-uuid',
-            'application_id' => 1,
+            'application_id' => $this->application->id,
             'server_id' => $this->server->id,
             'status' => ApplicationDeploymentStatus::IN_PROGRESS->value,
         ]);
@@ -236,7 +256,7 @@ describe('POST /api/v1/deployments/{uuid}/cancel', function () {
     test('cancels in-progress deployment and updates status in database', function () {
         $deployment = ApplicationDeploymentQueue::create([
             'deployment_uuid' => 'in-progress-deployment-uuid',
-            'application_id' => 1,
+            'application_id' => $this->application->id,
             'server_id' => $this->server->id,
             'status' => ApplicationDeploymentStatus::IN_PROGRESS->value,
         ]);
@@ -274,7 +294,7 @@ describe('POST /api/v1/deployments/{uuid}/cancel', function () {
 
         $deployment = ApplicationDeploymentQueue::create([
             'deployment_uuid' => 'shared-build-server-deployment',
-            'application_id' => 1,
+            'application_id' => $this->application->id,
             'server_id' => $this->server->id,
             'build_server_id' => $buildServer->id,
             'status' => ApplicationDeploymentStatus::IN_PROGRESS->value,
@@ -325,7 +345,7 @@ describe('POST /api/v1/deployments/{uuid}/cancel', function () {
 
         $deployment = ApplicationDeploymentQueue::create([
             'deployment_uuid' => 'unshared-build-server-deployment',
-            'application_id' => 1,
+            'application_id' => $this->application->id,
             'server_id' => $this->server->id,
             'build_server_id' => $buildServer->id,
             'status' => ApplicationDeploymentStatus::IN_PROGRESS->value,

@@ -812,3 +812,128 @@ test('authorized application logs return simulated container output', function (
     Process::assertRanTimes(fn ($process) => true, 3);
     Queue::assertNothingPushed();
 });
+
+test('deployment cancellation respects application sharing permissions', function (string $visibility) {
+    Process::fake();
+    Queue::fake();
+
+    InstanceSettings::findOrFail(0)->forceFill([
+        'is_api_enabled' => true,
+        'allowed_ips' => '127.0.0.1',
+    ])->save();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    $this->application->forceFill([
+        'visibility' => $visibility,
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    if ($visibility === 'custom') {
+        ApplicationShare::create([
+            'application_id' => $this->application->id,
+            'user_id' => $other->id,
+            'permission' => 'read',
+            'granted_by' => $this->owner->id,
+        ]);
+    }
+
+    expect($other->can('view', $this->application))
+        ->toBe($visibility === 'custom');
+    expect($other->can('manageDeployments', $this->application))
+        ->toBeFalse();
+
+    $deployment = ApplicationDeploymentQueue::create([
+        'deployment_uuid' => (string) Str::uuid(),
+        'application_id' => $this->application->id,
+        'server_id' => $this->application->destination->server_id,
+        'status' => 'queued',
+    ]);
+
+    session(['currentTeam' => $this->team]);
+    $token = $other->createToken('restricted-cancellation-test', ['*']);
+
+    auth()->logout();
+    auth()->forgetGuards();
+    Cache::flush();
+    Once::flush();
+
+    $response = $this->withToken($token->plainTextToken)
+        ->postJson('/api/v1/deployments/'.$deployment->deployment_uuid.'/cancel');
+
+    expect($deployment->fresh()->status)->toBe('queued');
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+
+    if ($visibility === 'private') {
+        $response->assertNotFound()
+            ->assertExactJson(['message' => 'Deployment not found.']);
+    } else {
+        $response->assertForbidden()->assertExactJson([
+            'message' => 'You do not have permission to cancel this deployment.',
+        ]);
+    }
+})->with(['private', 'custom']);
+
+test('operate sharing permits deployment cancellation through API', function (string $recipient) {
+    Process::fake();
+    Queue::fake();
+
+    InstanceSettings::findOrFail(0)->forceFill([
+        'is_api_enabled' => true,
+        'allowed_ips' => '127.0.0.1',
+    ])->save();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    $this->application->forceFill([
+        'visibility' => 'custom',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    expect($other->can('manageDeployments', $this->application))->toBeFalse();
+
+    ApplicationShare::create([
+        'application_id' => $this->application->id,
+        $recipient => $recipient === 'user_id' ? $other->id : $this->team->id,
+        'permission' => 'operate',
+        'granted_by' => $this->owner->id,
+    ]);
+
+    expect($other->can('manageDeployments', $this->application))->toBeTrue();
+
+    // An inaccessible build server avoids remote cleanup in this policy test.
+    $foreignTeam = Team::factory()->create();
+    $buildServer = Server::factory()->create(['team_id' => $foreignTeam->id]);
+
+    $deployment = ApplicationDeploymentQueue::create([
+        'deployment_uuid' => (string) Str::uuid(),
+        'application_id' => $this->application->id,
+        'server_id' => $this->application->destination->server_id,
+        'build_server_id' => $buildServer->id,
+        'status' => 'queued',
+    ]);
+
+    session(['currentTeam' => $this->team]);
+    $token = $other->createToken('operate-cancellation-test', ['*']);
+
+    auth()->logout();
+    auth()->forgetGuards();
+    Cache::flush();
+    Once::flush();
+
+    $this->withToken($token->plainTextToken)
+        ->postJson('/api/v1/deployments/'.$deployment->deployment_uuid.'/cancel')
+        ->assertOk()
+        ->assertExactJson([
+            'message' => 'Deployment cancelled successfully.',
+            'deployment_uuid' => $deployment->deployment_uuid,
+            'status' => 'cancelled-by-user',
+        ]);
+
+    expect($deployment->fresh()->status)->toBe('cancelled-by-user');
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+})->with(['user_id', 'team_id']);
