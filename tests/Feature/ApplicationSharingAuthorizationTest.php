@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\ApplicationDeploymentJob;
 use App\Livewire\GlobalSearch;
 use App\Models\Application;
 use App\Models\ApplicationDeploymentQueue;
@@ -11,6 +12,7 @@ use App\Models\PrivateKey;
 use App\Models\Project;
 use App\Models\Server;
 use App\Models\StandaloneDocker;
+use App\Models\Tag;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Database\QueryException;
@@ -1011,3 +1013,135 @@ test('unauthorized deployment cannot change docker image preview', function (str
         ]);
     }
 })->with(['private', 'custom'])->with([true, false]);
+
+test('tag deployment hides inaccessible private applications', function () {
+    Process::fake();
+    Queue::fake();
+
+    InstanceSettings::findOrFail(0)->forceFill([
+        'is_api_enabled' => true,
+        'allowed_ips' => '127.0.0.1',
+    ])->save();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    $this->application->forceFill([
+        'visibility' => 'private',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    expect($other->can('view', $this->application))->toBeFalse();
+    expect($other->can('deploy', $this->application))->toBeFalse();
+
+    $tag = Tag::create([
+        'name' => 'vcc-private-deploy-probe',
+        'team_id' => $this->team->id,
+    ]);
+
+    session(['currentTeam' => $this->team]);
+    $token = $other->createToken('private-tag-deployment-test', ['*']);
+
+    auth()->logout();
+    auth()->forgetGuards();
+    Cache::flush();
+    Once::flush();
+
+    $this->withToken($token->plainTextToken);
+
+    $empty = $this->postJson('/api/v1/deploy', ['tag' => $tag->name]);
+    $empty->assertOk()->assertExactJson([
+        'message' => ["No resources found for tag {$tag->name}."],
+    ]);
+
+    $this->application->tags()->attach($tag->id);
+
+    $response = $this->postJson('/api/v1/deploy', ['tag' => $tag->name]);
+
+    expect(ApplicationDeploymentQueue::count())->toBe(0);
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+
+    $response->assertStatus($empty->status())
+        ->assertExactJson($empty->json());
+});
+
+test('tag deployment queues only applications with operate access', function () {
+    Process::fake();
+    Queue::fake();
+
+    InstanceSettings::findOrFail(0)->forceFill([
+        'is_api_enabled' => true,
+        'allowed_ips' => '127.0.0.1',
+    ])->save();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    $tag = Tag::create([
+        'name' => 'vcc-mixed-deployment',
+        'team_id' => $this->team->id,
+    ]);
+
+    $apps = [];
+    foreach (['private', 'read', 'operate'] as $access) {
+        $app = Application::factory()->create([
+            'name' => 'vcc-mixed-'.$access,
+            'environment_id' => $this->application->environment_id,
+            'destination_id' => $this->application->destination_id,
+            'destination_type' => $this->application->destination_type,
+            'build_pack' => 'dockerimage',
+            'docker_registry_image_name' => 'ghcr.io/coollabsio/example',
+            'docker_registry_image_tag' => 'latest',
+        ]);
+
+        $app->forceFill([
+            'visibility' => $access === 'private' ? 'private' : 'custom',
+            'created_by' => $this->owner->id,
+        ])->save();
+        $app->tags()->attach($tag->id);
+
+        if ($access !== 'private') {
+            ApplicationShare::create([
+                'application_id' => $app->id,
+                'user_id' => $other->id,
+                'permission' => $access,
+                'granted_by' => $this->owner->id,
+            ]);
+        }
+
+        expect($other->can('deploy', $app))->toBe($access === 'operate');
+        $apps[$access] = $app;
+    }
+
+    session(['currentTeam' => $this->team]);
+    $token = $other->createToken('mixed-tag-deployment-test', ['*']);
+
+    auth()->logout();
+    auth()->forgetGuards();
+    Cache::flush();
+    Once::flush();
+
+    $response = $this->withToken($token->plainTextToken)
+        ->postJson('/api/v1/deploy', ['tag' => $tag->name]);
+
+    $response->assertOk()
+        ->assertJsonCount(1, 'details')
+        ->assertJsonPath('details.0.resource_uuid', $apps['operate']->uuid);
+
+    $deployment = ApplicationDeploymentQueue::sole();
+    expect((int) $deployment->application_id)->toBe($apps['operate']->id);
+    $response->assertJsonPath('details.0.deployment_uuid', $deployment->deployment_uuid);
+
+    expect($response->json('message'))
+        ->toContain('Unauthorized to deploy this application.');
+    expect($response->getContent())
+        ->not->toContain($apps['private']->uuid)
+        ->not->toContain($apps['private']->name);
+
+    Queue::assertPushed(
+        ApplicationDeploymentJob::class,
+        fn ($job) => $job->application_deployment_queue_id === $deployment->id
+    );
+    Process::assertNothingRan();
+});
