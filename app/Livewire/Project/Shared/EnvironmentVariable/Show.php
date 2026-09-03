@@ -118,8 +118,23 @@ class Show extends Component
         return ValidationPatterns::environmentVariableKeyMessages('key');
     }
 
+    private function ensureApplicationEnvironmentAccess(): void
+    {
+        if ($this->env instanceof ModelsEnvironmentVariable
+            && $this->env->resourceable instanceof Application) {
+            abort_unless(auth()->user()?->can('view', $this->env), 404);
+        }
+    }
+
+    public function hydrate()
+    {
+        $this->ensureApplicationEnvironmentAccess();
+    }
+
     public function mount()
     {
+        $this->ensureApplicationEnvironmentAccess();
+
         $this->syncData();
         if ($this->env->getMorphClass() === SharedEnvironmentVariable::class) {
             $this->isSharedVariable = true;
@@ -139,6 +154,8 @@ class Show extends Component
 
     public function refresh()
     {
+        $this->ensureApplicationEnvironmentAccess();
+
         if (! $this->env->exists || ! $this->env->fresh()) {
             return;
         }
@@ -152,6 +169,8 @@ class Show extends Component
      */
     public function loadValues(): void
     {
+        $this->ensureApplicationEnvironmentAccess();
+
         if ($this->valuesLoaded) {
             return;
         }
@@ -171,6 +190,8 @@ class Show extends Component
 
     public function copyValue(): ?string
     {
+        $this->ensureApplicationEnvironmentAccess();
+
         if ($this->env->is_shown_once || $this->shouldHideValue()) {
             return null;
         }
@@ -187,6 +208,8 @@ class Show extends Component
 
     public function syncData(bool $toModel = false)
     {
+        $this->ensureApplicationEnvironmentAccess();
+
         if ($toModel) {
             $this->authorize('update', $this->env);
 

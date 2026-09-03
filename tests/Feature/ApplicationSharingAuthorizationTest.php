@@ -1915,3 +1915,96 @@ test('environment Show owner can persist through syncData', function () {
     Process::assertNothingRan();
     Queue::assertNothingPushed();
 });
+
+test('environment Show rejects reads after sharing revocation', function (string $action) {
+    $this->withoutVite();
+    Process::fake();
+    Queue::fake();
+
+    $this->application->forceFill([
+        'visibility' => 'custom',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $env = EnvironmentVariable::create([
+        'key' => 'VCC_REVOKED_ENV',
+        'value' => 'fictional-revocation-value',
+        'resourceable_type' => Application::class,
+        'resourceable_id' => $this->application->id,
+        'is_preview' => false,
+        'is_shown_once' => false,
+    ]);
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    $share = ApplicationShare::create([
+        'application_id' => $this->application->id,
+        'user_id' => $other->id,
+        'permission' => 'read',
+        'granted_by' => $this->owner->id,
+    ]);
+
+    $this->actingAs($other);
+    session(['currentTeam' => $this->team->fresh()]);
+    Cache::flush();
+    Once::flush();
+
+    expect($other->can('view', $env))->toBeTrue();
+
+    $component = Livewire::test(
+        Show::class,
+        ['env' => $env, 'type' => 'application']
+    )->assertOk();
+
+    $share->delete();
+
+    expect($other->can('view', $env))->toBeFalse();
+
+    $component->call($action);
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+
+    $component->assertNotFound();
+})->with(['loadValues', 'copyValue', 'syncData', 'refresh', '$refresh']);
+
+test('environment Show refuses an inaccessible private application', function () {
+    $this->withoutVite();
+    Process::fake();
+    Queue::fake();
+
+    $this->application->forceFill([
+        'visibility' => 'private',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $env = EnvironmentVariable::create([
+        'key' => 'VCC_PRIVATE_ENV_COMPONENT',
+        'value' => 'fictional-private-value',
+        'resourceable_type' => Application::class,
+        'resourceable_id' => $this->application->id,
+        'is_preview' => false,
+        'is_shown_once' => false,
+    ]);
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    $this->actingAs($other);
+    session(['currentTeam' => $this->team->fresh()]);
+    Cache::flush();
+    Once::flush();
+
+    expect($other->can('view', $env))->toBeFalse();
+
+    $component = Livewire::test(
+        Show::class,
+        ['env' => $env, 'type' => 'application']
+    );
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+
+    $component->assertNotFound();
+});
