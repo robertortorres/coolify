@@ -2,6 +2,7 @@
 
 use App\Jobs\ApplicationDeploymentJob;
 use App\Livewire\GlobalSearch;
+use App\Livewire\Project\Shared\EnvironmentVariable\All;
 use App\Livewire\Project\Shared\EnvironmentVariable\Show;
 use App\Livewire\Project\Shared\GetLogs;
 use App\Livewire\Project\Shared\Logs;
@@ -2008,3 +2009,84 @@ test('environment Show refuses an inaccessible private application', function ()
 
     $component->assertNotFound();
 });
+
+test('environment All refuses an inaccessible private application', function () {
+    $this->withoutVite();
+    Process::fake();
+    Queue::fake();
+
+    $this->application->forceFill([
+        'visibility' => 'private',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    $this->actingAs($other);
+    session(['currentTeam' => $this->team->fresh()]);
+    Cache::flush();
+    Once::flush();
+
+    expect($other->can('view', $this->application))->toBeFalse();
+
+    $component = Livewire::test(
+        All::class,
+        ['resource' => $this->application]
+    );
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+
+    $component->assertNotFound();
+});
+
+test('environment All rejects requests after sharing revocation', function (string $action) {
+    $this->withoutVite();
+    Process::fake();
+    Queue::fake();
+
+    $this->application->forceFill([
+        'visibility' => 'custom',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    $share = ApplicationShare::create([
+        'application_id' => $this->application->id,
+        'user_id' => $other->id,
+        'permission' => 'read',
+        'granted_by' => $this->owner->id,
+    ]);
+
+    $this->actingAs($other);
+    session(['currentTeam' => $this->team->fresh()]);
+    Cache::flush();
+    Once::flush();
+
+    expect($other->can('view', $this->application))->toBeTrue();
+
+    $component = Livewire::test(
+        All::class,
+        ['resource' => $this->application]
+    )->assertOk();
+
+    $share->delete();
+
+    expect($other->can('view', $this->application))->toBeFalse();
+
+    $component->call($action);
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+
+    $component->assertNotFound();
+})->with([
+    'loadEnvironmentVariables',
+    'getDevView',
+    'switch',
+    'refreshEnvs',
+    '$refresh',
+]);
