@@ -2,6 +2,7 @@
 
 use App\Jobs\ApplicationDeploymentJob;
 use App\Livewire\GlobalSearch;
+use App\Livewire\Project\Shared\EnvironmentVariable\Add;
 use App\Livewire\Project\Shared\EnvironmentVariable\All;
 use App\Livewire\Project\Shared\EnvironmentVariable\Show;
 use App\Livewire\Project\Shared\GetLogs;
@@ -25,6 +26,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Process\FakeProcessResult;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -2090,3 +2092,217 @@ test('environment All rejects requests after sharing revocation', function (stri
     'refreshEnvs',
     '$refresh',
 ]);
+
+test('environment Add refuses an inaccessible private application', function () {
+    $this->withoutVite();
+    Process::fake();
+    Queue::fake();
+    Http::fake();
+
+    $this->application->forceFill([
+        'visibility' => 'private',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    $this->actingAs($other);
+    session(['currentTeam' => $this->team->fresh()]);
+    Cache::flush();
+    Once::flush();
+
+    expect($other->can('view', $this->application))->toBeFalse();
+
+    $component = Livewire::test(
+        Add::class,
+        ['resource' => $this->application]
+    );
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+    Http::assertNothingSent();
+
+    $component->assertNotFound();
+});
+
+test('environment Add denies shared access without environment management', function (string $permission) {
+    $this->withoutVite();
+    Process::fake();
+    Queue::fake();
+    Http::fake();
+
+    $this->application->forceFill([
+        'visibility' => 'custom',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    ApplicationShare::create([
+        'application_id' => $this->application->id,
+        'user_id' => $other->id,
+        'permission' => $permission,
+        'granted_by' => $this->owner->id,
+    ]);
+
+    $this->actingAs($other);
+    session(['currentTeam' => $this->team->fresh()]);
+    Cache::flush();
+    Once::flush();
+
+    expect($other->can('view', $this->application))->toBeTrue();
+    expect($other->can('manageEnvironment', $this->application))->toBeFalse();
+
+    $component = Livewire::test(
+        Add::class,
+        ['resource' => $this->application]
+    );
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+    Http::assertNothingSent();
+
+    $component->assertForbidden();
+})->with(['read', 'operate']);
+
+test('environment Add allows the application owner', function () {
+    $this->withoutVite();
+    Process::fake();
+    Queue::fake();
+    Http::fake();
+
+    $this->application->forceFill([
+        'visibility' => 'private',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    expect($this->owner->can('manageEnvironment', $this->application))->toBeTrue();
+
+    Livewire::test(
+        Add::class,
+        ['resource' => $this->application]
+    )
+        ->assertOk()
+        ->set('key', 'VCC_OWNER_ADD')
+        ->set('value', 'fictional-owner-value')
+        ->call('submit')
+        ->assertOk()
+        ->assertDispatched('saveKey');
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+    Http::assertNothingSent();
+});
+
+test('environment Add shared flag cannot bypass application access', function () {
+    $this->withoutVite();
+    Process::fake();
+    Queue::fake();
+    Http::fake();
+
+    $this->application->forceFill([
+        'visibility' => 'private',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    $this->actingAs($other);
+    session(['currentTeam' => $this->team->fresh()]);
+    Cache::flush();
+    Once::flush();
+
+    expect($other->can('view', $this->application))->toBeFalse();
+
+    Livewire::test(
+        Add::class,
+        ['resource' => $this->application, 'shared' => true]
+    )->assertNotFound();
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+    Http::assertNothingSent();
+});
+
+test('environment Add supports shared variables without an application', function () {
+    $this->withoutVite();
+    Process::fake();
+    Queue::fake();
+    Http::fake();
+
+    Livewire::test(
+        Add::class,
+        ['shared' => true]
+    )
+        ->assertOk()
+        ->set('key', 'VCC_SHARED_FORM')
+        ->set('value', 'fictional-shared-value')
+        ->call('submit')
+        ->assertOk()
+        ->assertDispatched('saveKey');
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+    Http::assertNothingSent();
+});
+
+test('environment Add rechecks permissions after visibility changes', function (
+    bool $retainRead,
+    string $action
+) {
+    $this->withoutVite();
+    Process::fake();
+    Queue::fake();
+    Http::fake();
+
+    $this->application->forceFill([
+        'visibility' => 'team',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => 'admin']);
+
+    $this->actingAs($other);
+    session(['currentTeam' => $this->team->fresh()]);
+    Cache::flush();
+    Once::flush();
+
+    expect($other->can('manageEnvironment', $this->application))->toBeTrue();
+
+    $component = Livewire::test(
+        Add::class,
+        ['resource' => $this->application]
+    )
+        ->assertOk()
+        ->set('key', 'VCC_PERMISSION_CHANGE')
+        ->set('value', 'fictional-value');
+
+    $this->application->forceFill([
+        'visibility' => $retainRead ? 'custom' : 'private',
+    ])->save();
+
+    if ($retainRead) {
+        ApplicationShare::create([
+            'application_id' => $this->application->id,
+            'user_id' => $other->id,
+            'permission' => 'read',
+            'granted_by' => $this->owner->id,
+        ]);
+    }
+
+    expect($other->can('view', $this->application))->toBe($retainRead);
+    expect($other->can('manageEnvironment', $this->application))->toBeFalse();
+
+    $component->call($action)
+        ->assertStatus($retainRead ? 403 : 404)
+        ->assertNotDispatched('saveKey');
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+    Http::assertNothingSent();
+})->with([false, true])
+    ->with(['submit', 'fetchSecretManagerKeys', '$refresh']);
