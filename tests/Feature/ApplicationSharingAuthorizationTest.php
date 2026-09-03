@@ -6,6 +6,7 @@ use App\Models\ApplicationDeploymentQueue;
 use App\Models\ApplicationShare;
 use App\Models\Environment;
 use App\Models\InstanceSettings;
+use App\Models\PrivateKey;
 use App\Models\Project;
 use App\Models\Server;
 use App\Models\StandaloneDocker;
@@ -16,6 +17,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Once;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -701,3 +703,112 @@ test('deployment API hides private applications from other team members', functi
     'member detail' => ['member', 'detail'],
     'operator detail' => ['operator', 'detail'],
 ]);
+
+test('private application logs are denied before running remote commands', function (string $role) {
+    Process::fake();
+    Queue::fake();
+
+    InstanceSettings::findOrFail(0)->forceFill([
+        'is_api_enabled' => true,
+        'allowed_ips' => '127.0.0.1',
+    ])->save();
+
+    $this->application->forceFill([
+        'visibility' => 'private',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $visible = Application::factory()->create([
+        'environment_id' => $this->application->environment_id,
+        'destination_id' => $this->application->destination_id,
+        'destination_type' => $this->application->destination_type,
+    ]);
+
+    $other = User::factory()->create();
+    $other->teams()->attach($this->team, ['role' => $role]);
+    session(['currentTeam' => $this->team]);
+    $token = $other->createToken('private-logs-test', ['read']);
+
+    auth()->logout();
+    auth()->forgetGuards();
+    Cache::flush();
+    Once::flush();
+
+    $this->withToken($token->plainTextToken);
+
+    $this->getJson('/api/v1/applications/'.$visible->uuid)
+        ->assertSuccessful()
+        ->assertJsonFragment(['uuid' => $visible->uuid]);
+
+    $response = $this->getJson(
+        '/api/v1/applications/'.$this->application->uuid.'/logs'
+    );
+
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+
+    $response->assertNotFound()
+        ->assertExactJson(['message' => 'Application not found.']);
+})->with(['member', 'operator', 'admin']);
+
+test('authorized application logs return simulated container output', function () {
+    Storage::fake('ssh-keys');
+    Queue::fake();
+    config(['constants.ssh.mux_enabled' => false]);
+
+    Process::fake([
+        '*docker ps -a*' => Process::result(
+            output: json_encode([
+                'ID' => 'vcc-logs-container',
+                'Names' => 'vcc-logs-container',
+                'Labels' => 'coolify.applicationId='.$this->application->id,
+            ]),
+        ),
+        '*docker inspect*' => Process::result(
+            output: '{"State":{"Status":"running"}}',
+        ),
+        '*docker logs*' => Process::result(
+            output: 'vcc-authorized-log-output',
+        ),
+        '*' => Process::result(
+            errorOutput: 'Unexpected command in logs test',
+            exitCode: 1,
+        ),
+    ]);
+
+    InstanceSettings::findOrFail(0)->forceFill([
+        'is_api_enabled' => true,
+        'allowed_ips' => '127.0.0.1',
+    ])->save();
+
+    $key = PrivateKey::factory()->create([
+        'team_id' => $this->team->id,
+    ]);
+
+    $server = $this->application->destination->server;
+    $server->forceFill(['private_key_id' => $key->id])->save();
+    Server::flushIdentityMap();
+
+    $this->application->forceFill([
+        'visibility' => 'private',
+        'created_by' => $this->owner->id,
+    ])->save();
+
+    $token = $this->owner->createToken('authorized-logs-test', ['read']);
+
+    auth()->logout();
+    auth()->forgetGuards();
+    Cache::flush();
+    Once::flush();
+
+    $this->withToken($token->plainTextToken)
+        ->getJson('/api/v1/applications/'.$this->application->uuid.'/logs')
+        ->assertOk()
+        ->assertExactJson(['logs' => 'vcc-authorized-log-output']);
+
+    Process::assertRan(fn ($process) => str_contains($process->command, 'docker ps -a'));
+    Process::assertRan(fn ($process) => str_contains($process->command, 'docker inspect'));
+    Process::assertRan(fn ($process) => str_contains($process->command, 'docker logs'));
+    Process::assertRanTimes(fn ($process) => true, 3);
+    Queue::assertNothingPushed();
+});

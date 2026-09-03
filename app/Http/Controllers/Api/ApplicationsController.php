@@ -2464,7 +2464,10 @@ class ApplicationsController extends Controller
         if (! $uuid) {
             return response()->json(['message' => 'UUID is required.'], 400);
         }
-        $application = Application::ownedByCurrentTeamAPI($teamId)->where('uuid', $request->route('uuid'))->first();
+        $application = Application::ownedByCurrentTeamAPI($teamId)
+            ->visibleTo($request->user())
+            ->where('uuid', $request->route('uuid'))
+            ->first();
         if (! $application) {
             return response()->json(['message' => 'Application not found.'], 404);
         }
