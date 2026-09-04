@@ -125,6 +125,29 @@ class ApplicationPolicy
     }
 
     /**
+     * Determine whether the user can manage application visibility and shares.
+     */
+    public function manageSharing(User $user, Application $application): bool
+    {
+        $teamId = $this->getTeamId($application);
+
+        if ($teamId === null) {
+            return false;
+        }
+
+        $membership = $user->teams()->whereKey($teamId)->first();
+        if ($membership === null) {
+            return false;
+        }
+
+        return $membership->pivot?->role === 'owner'
+            || (
+                $application->created_by !== null
+                && (string) $application->created_by === (string) $user->getKey()
+            );
+    }
+
+    /**
      * Determine whether the user can cleanup deployment queue.
      */
     public function cleanupDeploymentQueue(User $user): bool

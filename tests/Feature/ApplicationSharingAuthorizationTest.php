@@ -2630,3 +2630,48 @@ test('private application owner can mutate environment variables through API', f
     Queue::assertNothingPushed();
     Http::assertNothingSent();
 })->with(['create', 'update', 'bulk', 'delete']);
+
+test('application sharing management is limited to the creator and owning team owner', function (
+    string $role,
+    bool $creator,
+    bool $allowed
+) {
+    $user = User::factory()->create();
+    $user->teams()->attach($this->team, ['role' => $role]);
+
+    if ($creator) {
+        $this->application->forceFill(['created_by' => $user->id])->save();
+    }
+
+    expect($user->can('manageSharing', $this->application))->toBe($allowed);
+})->with([
+    'owning team owner' => ['owner', false, true],
+    'admin creator' => ['admin', true, true],
+    'operator creator' => ['operator', true, true],
+    'member creator after role change' => ['member', true, true],
+    'admin non-creator' => ['admin', false, false],
+    'operator non-creator' => ['operator', false, false],
+    'member non-creator' => ['member', false, false],
+]);
+
+test('application creator cannot manage sharing after leaving the owning team', function () {
+    $creator = User::factory()->create();
+    $creator->teams()->attach($this->team, ['role' => 'operator']);
+
+    $this->application->forceFill(['created_by' => $creator->id])->save();
+
+    expect($creator->can('manageSharing', $this->application))->toBeTrue();
+
+    $creator->teams()->detach($this->team);
+
+    expect($creator->fresh()->can('manageSharing', $this->application))
+        ->toBeFalse();
+});
+
+test('owner of another team cannot manage application sharing', function () {
+    $otherTeam = Team::factory()->create();
+    $otherOwner = User::factory()->create();
+    $otherOwner->teams()->attach($otherTeam, ['role' => 'owner']);
+
+    expect($otherOwner->can('manageSharing', $this->application))->toBeFalse();
+});
