@@ -36,6 +36,7 @@ class Configuration extends Component
             ->where('uuid', request()->route('environment_uuid'))
             ->firstOrFail();
         $application = $environment->applications()
+            ->visibleTo(auth()->user())
             ->with(['destination.server', 'environment.project'])
             ->where('uuid', request()->route('application_uuid'))
             ->firstOrFail();
@@ -68,6 +69,8 @@ class Configuration extends Component
 
     public function render()
     {
+        abort_unless(auth()->user()?->can('view', $this->application), 404);
+
         $this->syncCurrentRoute();
 
         return view('livewire.project.application.configuration');

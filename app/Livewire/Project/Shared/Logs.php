@@ -50,8 +50,22 @@ class Logs extends Component
         ];
     }
 
+    private function ensureApplicationLogAccess(): void
+    {
+        if (isset($this->resource) && $this->resource instanceof Application) {
+            abort_unless(auth()->user()?->can('view', $this->resource), 404);
+        }
+    }
+
+    public function hydrate()
+    {
+        $this->ensureApplicationLogAccess();
+    }
+
     public function loadAllContainers()
     {
+        $this->ensureApplicationLogAccess();
+
         try {
             foreach ($this->servers as $server) {
                 $this->serverContainers[$server->id] = $this->getContainersForServer($server);
@@ -114,6 +128,15 @@ class Logs extends Component
 
     public function mount()
     {
+        $applicationUuid = data_get(get_route_parameters(), 'application_uuid');
+
+        if ($applicationUuid) {
+            $this->resource = Application::ownedByCurrentTeam()
+                ->visibleTo(auth()->user())
+                ->where('uuid', $applicationUuid)
+                ->firstOrFail();
+        }
+
         try {
             $this->containers = collect();
             $this->servers = collect();
@@ -122,7 +145,6 @@ class Logs extends Component
             $this->query = request()->query();
             if (data_get($this->parameters, 'application_uuid')) {
                 $this->type = 'application';
-                $this->resource = Application::ownedByCurrentTeam()->where('uuid', $this->parameters['application_uuid'])->firstOrFail();
                 $this->status = $this->resource->status;
                 if ($this->resource->destination->server->isFunctional()) {
                     $server = $this->resource->destination->server;
@@ -174,6 +196,8 @@ class Logs extends Component
 
     public function render()
     {
+        $this->ensureApplicationLogAccess();
+
         return view('livewire.project.shared.logs');
     }
 }

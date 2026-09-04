@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Models\Application;
 use App\Models\EnvironmentVariable;
 use App\Models\User;
 
@@ -20,6 +21,12 @@ class EnvironmentVariablePolicy
      */
     public function view(User $user, EnvironmentVariable $environmentVariable): bool
     {
+        // Respect application sharing permissions.
+        $resource = $environmentVariable->resourceable;
+        if ($resource instanceof Application) {
+            return $user->can('view', $resource);
+        }
+
         $teamId = $this->getTeamId($environmentVariable);
 
         return $teamId !== null && $user->teams->contains('id', $teamId);
@@ -38,6 +45,12 @@ class EnvironmentVariablePolicy
      */
     public function update(User $user, EnvironmentVariable $environmentVariable): bool
     {
+        // Respect application sharing permissions.
+        $resource = $environmentVariable->resourceable;
+        if ($resource instanceof Application) {
+            return $user->can('manageEnvironment', $resource);
+        }
+
         $teamId = $this->getTeamId($environmentVariable);
 
         return $teamId !== null && $user->canManageResourcesOfTeam($teamId);
@@ -48,6 +61,12 @@ class EnvironmentVariablePolicy
      */
     public function delete(User $user, EnvironmentVariable $environmentVariable): bool
     {
+        // Respect application sharing permissions.
+        $resource = $environmentVariable->resourceable;
+        if ($resource instanceof Application) {
+            return $user->can('manageEnvironment', $resource);
+        }
+
         $teamId = $this->getTeamId($environmentVariable);
 
         return $teamId !== null && $user->canManageResourcesOfTeam($teamId);
@@ -74,6 +93,12 @@ class EnvironmentVariablePolicy
      */
     public function manageEnvironment(User $user, EnvironmentVariable $environmentVariable): bool
     {
+        // Respect application sharing permissions.
+        $resource = $environmentVariable->resourceable;
+        if ($resource instanceof Application) {
+            return $user->can('manageEnvironment', $resource);
+        }
+
         $teamId = $this->getTeamId($environmentVariable);
 
         return $teamId !== null && $user->canManageResourcesOfTeam($teamId);

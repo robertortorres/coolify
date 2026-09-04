@@ -58,7 +58,7 @@ class Index extends Component
         // Load projects and environments for breadcrumb navigation
         $this->allProjects = Project::ownedByCurrentTeamCached();
         $environmentRelations = [
-            'applications:id,uuid,name,environment_id',
+            'applications' => fn ($query) => $query->visibleTo(auth()->user())->select(['id', 'uuid', 'name', 'environment_id']),
             'services:id,uuid,name,environment_id',
             'postgresqls:id,uuid,name,environment_id',
             'redis:id,uuid,name,environment_id',
@@ -76,7 +76,7 @@ class Index extends Component
             ->get();
 
         $this->environment = $environment->loadCount([
-            'applications',
+            'applications' => fn ($query) => $query->visibleTo(auth()->user()),
             'redis',
             'postgresqls',
             'mysqls',
@@ -89,7 +89,7 @@ class Index extends Component
         ]);
 
         // Eager load relationships for applications
-        $this->applications = $this->environment->applications()->with([
+        $this->applications = $this->environment->applications()->visibleTo(auth()->user())->with([
             'tags',
             'destination.server.settings',
             'settings',

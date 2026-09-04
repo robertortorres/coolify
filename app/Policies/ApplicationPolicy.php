@@ -3,8 +3,10 @@
 namespace App\Policies;
 
 use App\Models\Application;
+use App\Models\ApplicationShare;
 use App\Models\User;
 use Illuminate\Auth\Access\Response;
+use Illuminate\Database\Eloquent\Builder;
 
 class ApplicationPolicy
 {
@@ -23,7 +25,7 @@ class ApplicationPolicy
     {
         $teamId = $this->getTeamId($application);
 
-        return $teamId !== null && $user->teams->contains('id', $teamId);
+        return $this->sharingAccess($user, $application);
     }
 
     /**
@@ -45,7 +47,7 @@ class ApplicationPolicy
             return Response::deny('Application team not found.');
         }
 
-        if ($user->canManageResourcesOfTeam($teamId)) {
+        if ($this->sharingAccess($user, $application, true)) {
             return Response::allow();
         }
 
@@ -59,7 +61,7 @@ class ApplicationPolicy
     {
         $teamId = $this->getTeamId($application);
 
-        return $teamId !== null && $user->canManageResourcesOfTeam($teamId);
+        return $this->sharingAccess($user, $application, true);
     }
 
     /**
@@ -89,7 +91,7 @@ class ApplicationPolicy
             return Response::deny('Application team not found.');
         }
 
-        if ($user->canManageResourcesOfTeam($teamId)) {
+        if ($this->sharingAccess($user, $application, true)) {
             return Response::allow();
         }
 
@@ -101,9 +103,7 @@ class ApplicationPolicy
      */
     public function deploy(User $user, Application $application): bool
     {
-        $teamId = $this->getTeamId($application);
-
-        return $teamId !== null && $user->canManageResourcesOfTeam($teamId);
+        return $this->canOperateApplication($user, $application);
     }
 
     /**
@@ -111,9 +111,7 @@ class ApplicationPolicy
      */
     public function manageDeployments(User $user, Application $application): bool
     {
-        $teamId = $this->getTeamId($application);
-
-        return $teamId !== null && $user->canManageResourcesOfTeam($teamId);
+        return $this->canOperateApplication($user, $application);
     }
 
     /**
@@ -123,7 +121,30 @@ class ApplicationPolicy
     {
         $teamId = $this->getTeamId($application);
 
-        return $teamId !== null && $user->canManageResourcesOfTeam($teamId);
+        return $this->sharingAccess($user, $application, true);
+    }
+
+    /**
+     * Determine whether the user can manage application visibility and shares.
+     */
+    public function manageSharing(User $user, Application $application): bool
+    {
+        $teamId = $this->getTeamId($application);
+
+        if ($teamId === null) {
+            return false;
+        }
+
+        $membership = $user->teams()->whereKey($teamId)->first();
+        if ($membership === null) {
+            return false;
+        }
+
+        return $membership->pivot?->role === 'owner'
+            || (
+                $application->created_by !== null
+                && (string) $application->created_by === (string) $user->getKey()
+            );
     }
 
     /**
@@ -132,6 +153,93 @@ class ApplicationPolicy
     public function cleanupDeploymentQueue(User $user): bool
     {
         return $user->canManageResources();
+    }
+
+    private function sharingAccess(
+        User $user,
+        Application $application,
+        bool $manage = false
+    ): bool {
+        $teamId = $this->getTeamId($application);
+        if ($teamId === null) {
+            return false;
+        }
+
+        $visibility = $application->visibility ?? 'team';
+        if (! in_array($visibility, ['team', 'private', 'custom'], true)) {
+            return false;
+        }
+
+        $membership = $user->teams()->whereKey($teamId)->first();
+        $role = $membership?->pivot?->role;
+        $isCreator = $membership !== null
+            && $application->created_by !== null
+            && (string) $application->created_by === (string) $user->getKey();
+
+        $trusted = $role === 'owner' || $isCreator;
+
+        if ($manage) {
+            return in_array($role, ['owner', 'admin', 'operator'], true)
+                && ($visibility === 'team' || $trusted);
+        }
+
+        if ($visibility === 'team') {
+            return $membership !== null;
+        }
+
+        if ($trusted) {
+            return true;
+        }
+
+        if ($visibility === 'private') {
+            return false;
+        }
+
+        return ApplicationShare::query()
+            ->where('application_id', $application->getKey())
+            ->whereIn('permission', ['read', 'operate'])
+            ->where(function (Builder $query) use ($user): void {
+                $query->where(function (Builder $direct) use ($user): void {
+                    $direct->where('user_id', $user->getKey())
+                        ->whereNull('team_id');
+                })->orWhere(function (Builder $team) use ($user): void {
+                    $team->whereNull('user_id')->whereIn(
+                        'team_id',
+                        $user->teams()->select('teams.id')
+                    );
+                });
+            })
+            ->exists();
+    }
+
+    private function canOperateApplication(
+        User $user,
+        Application $application
+    ): bool {
+        if ($this->sharingAccess($user, $application, true)) {
+            return true;
+        }
+
+        if ($application->visibility !== 'custom'
+            || $this->getTeamId($application) === null) {
+            return false;
+        }
+
+        return ApplicationShare::query()
+            ->where('application_id', $application->getKey())
+            ->where('permission', 'operate')
+            ->where(function (Builder $query) use ($user): void {
+                $query->where(function (Builder $direct) use ($user): void {
+                    $direct->where('user_id', $user->getKey())
+                        ->whereNull('team_id');
+                })->orWhere(function (Builder $team) use ($user): void {
+                    $team->whereNull('user_id')->whereIn(
+                        'team_id',
+                        $user->teams()->select('teams.id')
+                    );
+                });
+            })
+            ->exists();
     }
 
     private function getTeamId(Application $application): ?int

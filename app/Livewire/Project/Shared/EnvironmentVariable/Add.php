@@ -83,8 +83,28 @@ class Add extends Component
         'comment' => 'comment',
     ];
 
+    private function ensureApplicationEnvironmentAccess(): void
+    {
+        if (! ($this->resource instanceof Application)) {
+            return;
+        }
+
+        abort_unless(auth()->user()?->can('view', $this->resource), 404);
+        abort_unless(
+            auth()->user()?->can('manageEnvironment', $this->resource),
+            403
+        );
+    }
+
+    public function hydrate()
+    {
+        $this->ensureApplicationEnvironmentAccess();
+    }
+
     public function mount()
     {
+        $this->ensureApplicationEnvironmentAccess();
+
         $this->parameters = get_route_parameters();
         $this->problematicVariables = self::getProblematicVariablesForFrontend();
     }
@@ -218,6 +238,8 @@ class Add extends Component
 
     public function submit()
     {
+        $this->ensureApplicationEnvironmentAccess();
+
         $this->key = ValidationPatterns::normalizeEnvironmentVariableKey($this->key);
         $this->validate();
         $this->dispatch('saveKey', [

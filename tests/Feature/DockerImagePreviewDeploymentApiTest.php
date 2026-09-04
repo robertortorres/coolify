@@ -3,19 +3,34 @@
 use App\Models\Application;
 use App\Models\ApplicationPreview;
 use App\Models\Environment;
+use App\Models\InstanceSettings;
 use App\Models\Project;
 use App\Models\Server;
 use App\Models\StandaloneDocker;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
+    Server::flushIdentityMap();
     Queue::fake();
+    Process::fake();
+
+    config([
+        'cache.default' => 'array',
+        'app.maintenance.store' => 'array',
+    ]);
+
+    InstanceSettings::unguarded(fn () => InstanceSettings::updateOrCreate(
+        ['id' => 0],
+        ['is_api_enabled' => true, 'allowed_ips' => '127.0.0.1']
+    )
+    );
 
     $this->team = Team::factory()->create();
     $this->user = User::factory()->create();

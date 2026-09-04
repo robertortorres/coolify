@@ -30,6 +30,8 @@ use Livewire\Livewire;
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
+    Server::flushIdentityMap();
+
     config([
         'app.maintenance.store' => 'array',
         'cache.default' => 'array',

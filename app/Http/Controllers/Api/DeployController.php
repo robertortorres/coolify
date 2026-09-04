@@ -73,7 +73,14 @@ class DeployController extends Controller
             return invalidTokenResponse();
         }
         $servers = Server::whereTeamId($teamId)->get();
-        $deployments_per_server = ApplicationDeploymentQueue::whereIn('status', ['in_progress', 'queued'])->whereIn('server_id', $servers->pluck('id'))->get()->sortBy('id');
+        $deployments_per_server = ApplicationDeploymentQueue::whereIn('status', ['in_progress', 'queued'])
+            ->whereIn('server_id', $servers->pluck('id'))
+            ->whereHas('application', function ($query) use ($request, $teamId) {
+                $query->visibleTo($request->user())
+                    ->whereRelation('environment.project', 'team_id', $teamId);
+            })
+            ->get()
+            ->sortBy('id');
         $deployments_per_server = $deployments_per_server->map(function ($deployment) {
             return $this->removeSensitiveData($deployment);
         });
@@ -135,6 +142,13 @@ class DeployController extends Controller
         }
         $application = $deployment->application;
         if (! $application || data_get($application->team(), 'id') !== (int) $teamId) {
+            return response()->json(['message' => 'Deployment not found.'], 404);
+        }
+
+        if (! Application::query()
+            ->visibleTo($request->user())
+            ->whereKey($application->getKey())
+            ->exists()) {
             return response()->json(['message' => 'Deployment not found.'], 404);
         }
 
@@ -230,6 +244,22 @@ class DeployController extends Controller
         $servers = Server::whereTeamId($teamId)->pluck('id');
         if (! $servers->contains($deployment->server_id)) {
             return response()->json(['message' => 'You do not have permission to cancel this deployment.'], 403);
+        }
+
+        // Authorize application access before changing deployment state.
+        $application = Application::ownedByCurrentTeamAPI($teamId)
+            ->visibleTo($request->user())
+            ->whereKey($deployment->application_id)
+            ->first();
+
+        if (! $application) {
+            return response()->json(['message' => 'Deployment not found.'], 404);
+        }
+
+        if (! $request->user()->can('manageDeployments', $application)) {
+            return response()->json([
+                'message' => 'You do not have permission to cancel this deployment.',
+            ], 403);
         }
 
         // Check if deployment can be cancelled (must be queued or in_progress)
@@ -431,6 +461,33 @@ class DeployController extends Controller
         foreach ($uuids as $uuid) {
             $resource = getResourceByUuid($uuid, $teamId);
             if ($resource) {
+                // Authorize before reading or changing application previews.
+                if ($resource instanceof Application) {
+                    if (! auth()->user()->can('view', $resource)) {
+                        continue;
+                    }
+
+                    if (! auth()->user()->can('deploy', $resource)) {
+                        $deployments->push([
+                            'message' => 'Unauthorized to deploy this application.',
+                            'resource_uuid' => $uuid,
+                        ]);
+
+                        continue;
+                    }
+                }
+
+                if ($resource instanceof Application
+                    && $dockerTag !== null
+                    && $resource->build_pack !== 'dockerimage') {
+                    $deployments->push([
+                        'message' => 'docker_tag can only be used with Docker Image applications.',
+                        'resource_uuid' => $uuid,
+                    ]);
+
+                    continue;
+                }
+
                 $dockerTagForResource = $dockerTag;
                 if ($pr !== 0) {
                     $preview = null;
@@ -484,7 +541,9 @@ class DeployController extends Controller
                 // $message->push("Tag {$tag} not found.");
                 continue;
             }
-            $applications = $found_tag->applications()->get();
+            $applications = $found_tag->applications()
+                ->visibleTo(auth()->user())
+                ->get();
             $services = $found_tag->services()->get();
             if ($applications->count() === 0 && $services->count() === 0) {
                 $message->push("No resources found for tag {$tag}.");

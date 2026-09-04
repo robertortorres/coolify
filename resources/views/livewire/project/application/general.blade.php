@@ -597,6 +597,14 @@
         </div>
     </form>
 
+    @can('manageSharing', $application)
+        <div class="mt-6">
+            <livewire:project.application.sharing
+                :application="$application"
+                :key="'application-sharing-'.$application->id" />
+        </div>
+    @endcan
+
     <x-domain-conflict-modal :conflicts="$domainConflicts" :showModal="$showDomainConflictModal" confirmAction="confirmDomainUsage" />
 
     @script

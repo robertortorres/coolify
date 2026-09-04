@@ -80,7 +80,10 @@ class ApplicationsController extends Controller
 
     protected function findTaggableResource(string $uuid, int|string $teamId): mixed
     {
-        return Application::ownedByCurrentTeamAPI($teamId)->where('uuid', $uuid)->first();
+        return Application::ownedByCurrentTeamAPI($teamId)
+            ->visibleTo(auth()->user())
+            ->where('uuid', $uuid)
+            ->first();
     }
 
     protected function tagResourceNotFoundMessage(): string
@@ -257,6 +260,7 @@ class ApplicationsController extends Controller
             : [];
 
         $applications = Application::ownedByCurrentTeamAPI($teamId)
+            ->visibleTo($request->user())
             ->with($applicationRelations)
             ->when($tagName, function ($query, $tagName) {
                 $query->whereHas('tags', function ($query) use ($tagName) {
@@ -2371,7 +2375,11 @@ class ApplicationsController extends Controller
         if (! $uuid) {
             return response()->json(['message' => 'UUID is required.'], 400);
         }
-        $application = Application::ownedByCurrentTeamAPI($teamId)->with('settings')->where('uuid', $request->route('uuid'))->first();
+        $application = Application::ownedByCurrentTeamAPI($teamId)
+            ->visibleTo($request->user())
+            ->with('settings')
+            ->where('uuid', $request->route('uuid'))
+            ->first();
         if (! $application) {
             return response()->json(['message' => 'Application not found.'], 404);
         }
@@ -2459,7 +2467,10 @@ class ApplicationsController extends Controller
         if (! $uuid) {
             return response()->json(['message' => 'UUID is required.'], 400);
         }
-        $application = Application::ownedByCurrentTeamAPI($teamId)->where('uuid', $request->route('uuid'))->first();
+        $application = Application::ownedByCurrentTeamAPI($teamId)
+            ->visibleTo($request->user())
+            ->where('uuid', $request->route('uuid'))
+            ->first();
         if (! $application) {
             return response()->json(['message' => 'Application not found.'], 404);
         }
@@ -3213,7 +3224,10 @@ class ApplicationsController extends Controller
         if (is_null($teamId)) {
             return invalidTokenResponse();
         }
-        $application = Application::ownedByCurrentTeamAPI($teamId)->where('uuid', $request->uuid)->first();
+        $application = Application::ownedByCurrentTeamAPI($teamId)
+            ->visibleTo($request->user())
+            ->where('uuid', $request->uuid)
+            ->first();
 
         if (! $application) {
             return response()->json([
@@ -3325,7 +3339,10 @@ class ApplicationsController extends Controller
         if ($return instanceof JsonResponse) {
             return $return;
         }
-        $application = Application::ownedByCurrentTeamAPI($teamId)->where('uuid', $request->route('uuid'))->first();
+        $application = Application::ownedByCurrentTeamAPI($teamId)
+            ->visibleTo($request->user())
+            ->where('uuid', $request->route('uuid'))
+            ->first();
 
         if (! $application) {
             return response()->json([
@@ -3546,7 +3563,10 @@ class ApplicationsController extends Controller
         if ($return instanceof JsonResponse) {
             return $return;
         }
-        $application = Application::ownedByCurrentTeamAPI($teamId)->where('uuid', $request->route('uuid'))->first();
+        $application = Application::ownedByCurrentTeamAPI($teamId)
+            ->visibleTo($request->user())
+            ->where('uuid', $request->route('uuid'))
+            ->first();
 
         if (! $application) {
             return response()->json([
@@ -3761,7 +3781,10 @@ class ApplicationsController extends Controller
         if (is_null($teamId)) {
             return invalidTokenResponse();
         }
-        $application = Application::ownedByCurrentTeamAPI($teamId)->where('uuid', $request->route('uuid'))->first();
+        $application = Application::ownedByCurrentTeamAPI($teamId)
+            ->visibleTo($request->user())
+            ->where('uuid', $request->route('uuid'))
+            ->first();
 
         if (! $application) {
             return response()->json([
@@ -3938,7 +3961,10 @@ class ApplicationsController extends Controller
         if (is_null($teamId)) {
             return invalidTokenResponse();
         }
-        $application = Application::ownedByCurrentTeamAPI($teamId)->where('uuid', $request->route('uuid'))->first();
+        $application = Application::ownedByCurrentTeamAPI($teamId)
+            ->visibleTo($request->user())
+            ->where('uuid', $request->route('uuid'))
+            ->first();
 
         if (! $application) {
             return response()->json([

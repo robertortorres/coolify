@@ -59,8 +59,22 @@ class GetLogs extends Component
 
     public bool $collapsible = true;
 
+    private function ensureApplicationLogAccess(): void
+    {
+        if ($this->resource instanceof Application) {
+            abort_unless(auth()->user()?->can('view', $this->resource), 404);
+        }
+    }
+
+    public function hydrate()
+    {
+        $this->ensureApplicationLogAccess();
+    }
+
     public function mount()
     {
+        $this->ensureApplicationLogAccess();
+
         if (! is_null($this->resource)) {
             if ($this->resource->getMorphClass() === Application::class) {
                 $this->showTimeStamps = $this->resource->settings->is_include_timestamps;
@@ -81,6 +95,12 @@ class GetLogs extends Component
 
     public function instantSave()
     {
+        $this->ensureApplicationLogAccess();
+
+        if ($this->resource instanceof Application) {
+            abort_unless(auth()->user()?->can('update', $this->resource), 403);
+        }
+
         if (! is_null($this->resource)) {
             if ($this->resource->getMorphClass() === Application::class) {
                 $this->resource->settings->is_include_timestamps = $this->showTimeStamps;
@@ -126,6 +146,8 @@ class GetLogs extends Component
 
     public function getLogs($refresh = false)
     {
+        $this->ensureApplicationLogAccess();
+
         if (! Server::ownedByCurrentTeam()->where('id', $this->server->id)->exists()) {
             $this->outputs = 'Unauthorized.';
 
@@ -226,11 +248,15 @@ class GetLogs extends Component
 
     public function copyLogs(): string
     {
+        $this->ensureApplicationLogAccess();
+
         return sanitizeLogsForExport($this->outputs);
     }
 
     public function downloadAllLogs(): string
     {
+        $this->ensureApplicationLogAccess();
+
         if (! Server::ownedByCurrentTeam()->where('id', $this->server->id)->exists()) {
             return '';
         }

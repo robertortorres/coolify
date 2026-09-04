@@ -88,8 +88,22 @@ class All extends Component
         unset($this->currentEnvironmentVariablePage);
     }
 
+    private function ensureApplicationEnvironmentAccess(): void
+    {
+        if ($this->resource instanceof Application) {
+            abort_unless(auth()->user()?->can('view', $this->resource), 404);
+        }
+    }
+
+    public function hydrate()
+    {
+        $this->ensureApplicationEnvironmentAccess();
+    }
+
     public function mount()
     {
+        $this->ensureApplicationEnvironmentAccess();
+
         $this->is_env_sorting_enabled = data_get($this->resource, 'settings.is_env_sorting_enabled', false);
         $this->use_build_secrets = data_get($this->resource, 'settings.use_build_secrets', false);
         $this->resourceClass = get_class($this->resource);
@@ -108,6 +122,8 @@ class All extends Component
      */
     public function loadEnvironmentVariables(): void
     {
+        $this->ensureApplicationEnvironmentAccess();
+
         if ($this->readyToLoad) {
             return;
         }
@@ -808,6 +824,8 @@ class All extends Component
 
     public function getDevView()
     {
+        $this->ensureApplicationEnvironmentAccess();
+
         $this->variables = $this->formatEnvironmentVariables($this->getEnvironmentVariables(false, false));
         if ($this->showPreview) {
             $this->variablesPreview = $this->formatEnvironmentVariables($this->getEnvironmentVariables(true, false));
@@ -835,6 +853,8 @@ class All extends Component
 
     public function switch()
     {
+        $this->ensureApplicationEnvironmentAccess();
+
         $this->view = $this->view === 'normal' ? 'dev' : 'normal';
         if ($this->view === 'dev') {
             $this->ensureEnvironmentVariablesLoaded();
@@ -1087,6 +1107,8 @@ class All extends Component
 
     public function refreshEnvs()
     {
+        $this->ensureApplicationEnvironmentAccess();
+
         $this->resource->refresh();
         $this->readyToLoad = true;
         $this->clearEnvironmentVariableCaches();

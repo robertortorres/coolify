@@ -8,6 +8,8 @@
     closeResetTimer: null,
     isPaletteTransitioning: false,
     allSearchableItems: [],
+    searchRefreshVersion: 0,
+    searchRefreshTimer: null,
     searchQuery: '',
     creatableItems: [],
     isCreateMode: false,
@@ -94,6 +96,39 @@
         return grouped;
     },
 
+    refreshSearchItems() {
+        const version = ++this.searchRefreshVersion;
+        clearTimeout(this.searchRefreshTimer);
+        this.allSearchableItems = [];
+        this.creatableItems = [];
+        this.selectedIndex = -1;
+
+        if (!this.modalOpen) return;
+
+        this.isLoadingInitialData = true;
+        this.searchRefreshTimer = setTimeout(async () => {
+            if (!this.modalOpen || version !== this.searchRefreshVersion) return;
+
+            try {
+                await $wire.$refresh();
+                if (!this.modalOpen || version !== this.searchRefreshVersion) return;
+
+                this.allSearchableItems = $wire.allSearchableItems || [];
+                this.creatableItems = $wire.creatableItems || [];
+            } catch (error) {
+                if (version === this.searchRefreshVersion) {
+                    this.allSearchableItems = [];
+                    this.creatableItems = [];
+                }
+            } finally {
+                if (version === this.searchRefreshVersion) {
+                    clearTimeout(this.spinnerTimer);
+                    this.isLoadingInitialData = false;
+                    this.showLoadingSpinner = false;
+                }
+            }
+        }, 250);
+    },
     openModal() {
         // Check if $wire is available (may not be after SPA navigation destroys/recreates component)
         if (typeof $wire === 'undefined' || !$wire) {
@@ -111,7 +146,10 @@
         this.spinnerTimer = setTimeout(() => {
             if (this.isLoadingInitialData) this.showLoadingSpinner = true;
         }, 150);
+        const version = ++this.searchRefreshVersion;
+        clearTimeout(this.searchRefreshTimer);
         $wire.openSearchModal().then(() => {
+            if (!this.modalOpen || version !== this.searchRefreshVersion) return;
             this.allSearchableItems = $wire.allSearchableItems || [];
             this.creatableItems = $wire.creatableItems || [];
             clearTimeout(this.spinnerTimer);
@@ -119,6 +157,7 @@
             this.showLoadingSpinner = false;
             setTimeout(() => this.$refs.searchInput?.focus(), 50);
         }).catch(() => {
+            if (version !== this.searchRefreshVersion) return;
             // Handle case where component was destroyed during navigation
             clearTimeout(this.spinnerTimer);
             this.modalOpen = false;
@@ -127,6 +166,9 @@
         });
     },
     closeModal() {
+        ++this.searchRefreshVersion;
+        clearTimeout(this.searchRefreshTimer);
+        clearTimeout(this.spinnerTimer);
         this.modalOpen = false;
         this.selectedIndex = -1;
         this.isSearching = false;
@@ -358,6 +400,7 @@
                         </svg>
                     </span>
                     <input type="text" x-model="searchQuery"
+                        @input="refreshSearchItems()"
                         placeholder="Search resources, paths, everything (type new for create)..." x-ref="searchInput"
                         x-init="$watch('modalOpen', value => { if (value) setTimeout(() => $refs.searchInput.focus(), 100) })"
                         class="command-palette-input" autocomplete="off" spellcheck="false" />

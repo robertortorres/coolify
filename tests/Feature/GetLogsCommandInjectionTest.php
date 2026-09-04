@@ -3,6 +3,7 @@
 use App\Livewire\Project\Shared\GetLogs;
 use App\Models\Application;
 use App\Models\Environment;
+use App\Models\InstanceSettings;
 use App\Models\PrivateKey;
 use App\Models\Project;
 use App\Models\Server;
@@ -13,12 +14,25 @@ use App\Support\ValidationPatterns;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Process\FakeProcessResult;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Attributes\Locked;
 use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
+    Server::flushIdentityMap();
+    Storage::fake('ssh-keys');
+
+    config([
+        'cache.default' => 'array',
+        'app.maintenance.store' => 'array',
+        'constants.ssh.mux_enabled' => false,
+    ]);
+
+    InstanceSettings::unguarded(fn () => InstanceSettings::updateOrCreate(['id' => 0], [])
+    );
+
     $this->user = User::factory()->create();
     $this->team = Team::factory()->create();
     $this->user->teams()->attach($this->team, ['role' => 'owner']);

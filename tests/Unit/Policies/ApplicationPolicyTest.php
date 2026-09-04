@@ -4,6 +4,25 @@ use App\Models\Application;
 use App\Models\User;
 use App\Policies\ApplicationPolicy;
 
+function mockApplicationPolicyMembership(User $user, int $teamId, ?string $role): void
+{
+    $membership = $role === null
+        ? null
+        : (object) [
+            'pivot' => (object) ['role' => $role],
+        ];
+
+    $relation = Mockery::mock();
+    $relation->shouldReceive('whereKey')
+        ->with($teamId)
+        ->andReturnSelf();
+    $relation->shouldReceive('first')
+        ->andReturn($membership);
+
+    $user->shouldReceive('teams')
+        ->andReturn($relation);
+}
+
 it('allows any user to view any applications', function () {
     $user = Mockery::mock(User::class)->makePartial();
 
@@ -12,12 +31,8 @@ it('allows any user to view any applications', function () {
 });
 
 it('allows team member to view their own team application', function () {
-    $teams = collect([
-        (object) ['id' => 1],
-    ]);
-
     $user = Mockery::mock(User::class)->makePartial();
-    $user->shouldReceive('getAttribute')->with('teams')->andReturn($teams);
+    mockApplicationPolicyMembership($user, 1, 'member');
 
     $application = Mockery::mock(Application::class)->makePartial();
     $application->shouldReceive('team')->andReturn((object) ['id' => 1]);
@@ -27,12 +42,8 @@ it('allows team member to view their own team application', function () {
 });
 
 it('denies non-member to view another team application', function () {
-    $teams = collect([
-        (object) ['id' => 1],
-    ]);
-
     $user = Mockery::mock(User::class)->makePartial();
-    $user->shouldReceive('getAttribute')->with('teams')->andReturn($teams);
+    mockApplicationPolicyMembership($user, 2, null);
 
     $application = Mockery::mock(Application::class)->makePartial();
     $application->shouldReceive('team')->andReturn((object) ['id' => 2]);
@@ -75,7 +86,7 @@ it('denies member to create an application', function () {
 
 it('allows team admin to update their own team application', function () {
     $user = Mockery::mock(User::class)->makePartial();
-    $user->shouldReceive('isAdminOfTeam')->with(1)->andReturn(true);
+    mockApplicationPolicyMembership($user, 1, 'admin');
 
     $application = Mockery::mock(Application::class)->makePartial();
     $application->shouldReceive('team')->andReturn((object) ['id' => 1]);
@@ -86,8 +97,7 @@ it('allows team admin to update their own team application', function () {
 
 it('denies team member to update their own team application', function () {
     $user = Mockery::mock(User::class)->makePartial();
-    $user->shouldReceive('isAdminOfTeam')->with(1)->andReturn(false);
-    $user->shouldReceive('roleInTeam')->with(1)->andReturn('member');
+    mockApplicationPolicyMembership($user, 1, 'member');
 
     $application = Mockery::mock(Application::class)->makePartial();
     $application->shouldReceive('team')->andReturn((object) ['id' => 1]);
@@ -108,7 +118,7 @@ it('denies update when application has no team', function () {
 
 it('allows team admin to delete their own team application', function () {
     $user = Mockery::mock(User::class)->makePartial();
-    $user->shouldReceive('isAdminOfTeam')->with(1)->andReturn(true);
+    mockApplicationPolicyMembership($user, 1, 'admin');
 
     $application = Mockery::mock(Application::class)->makePartial();
     $application->shouldReceive('team')->andReturn((object) ['id' => 1]);
@@ -119,8 +129,7 @@ it('allows team admin to delete their own team application', function () {
 
 it('denies team member to delete their own team application', function () {
     $user = Mockery::mock(User::class)->makePartial();
-    $user->shouldReceive('isAdminOfTeam')->with(1)->andReturn(false);
-    $user->shouldReceive('roleInTeam')->with(1)->andReturn('member');
+    mockApplicationPolicyMembership($user, 1, 'member');
 
     $application = Mockery::mock(Application::class)->makePartial();
     $application->shouldReceive('team')->andReturn((object) ['id' => 1]);
@@ -141,7 +150,7 @@ it('denies delete when application has no team', function () {
 
 it('allows team admin to deploy their own team application', function () {
     $user = Mockery::mock(User::class)->makePartial();
-    $user->shouldReceive('isAdminOfTeam')->with(1)->andReturn(true);
+    mockApplicationPolicyMembership($user, 1, 'admin');
 
     $application = Mockery::mock(Application::class)->makePartial();
     $application->shouldReceive('team')->andReturn((object) ['id' => 1]);
@@ -152,8 +161,7 @@ it('allows team admin to deploy their own team application', function () {
 
 it('denies team member to deploy their own team application', function () {
     $user = Mockery::mock(User::class)->makePartial();
-    $user->shouldReceive('isAdminOfTeam')->with(1)->andReturn(false);
-    $user->shouldReceive('roleInTeam')->with(1)->andReturn('member');
+    mockApplicationPolicyMembership($user, 1, 'member');
 
     $application = Mockery::mock(Application::class)->makePartial();
     $application->shouldReceive('team')->andReturn((object) ['id' => 1]);
@@ -164,7 +172,7 @@ it('denies team member to deploy their own team application', function () {
 
 it('allows team admin to manage deployments', function () {
     $user = Mockery::mock(User::class)->makePartial();
-    $user->shouldReceive('isAdminOfTeam')->with(1)->andReturn(true);
+    mockApplicationPolicyMembership($user, 1, 'admin');
 
     $application = Mockery::mock(Application::class)->makePartial();
     $application->shouldReceive('team')->andReturn((object) ['id' => 1]);
@@ -175,8 +183,7 @@ it('allows team admin to manage deployments', function () {
 
 it('denies team member to manage deployments', function () {
     $user = Mockery::mock(User::class)->makePartial();
-    $user->shouldReceive('isAdminOfTeam')->with(1)->andReturn(false);
-    $user->shouldReceive('roleInTeam')->with(1)->andReturn('member');
+    mockApplicationPolicyMembership($user, 1, 'member');
 
     $application = Mockery::mock(Application::class)->makePartial();
     $application->shouldReceive('team')->andReturn((object) ['id' => 1]);
@@ -187,7 +194,7 @@ it('denies team member to manage deployments', function () {
 
 it('allows team admin to manage environment variables', function () {
     $user = Mockery::mock(User::class)->makePartial();
-    $user->shouldReceive('isAdminOfTeam')->with(1)->andReturn(true);
+    mockApplicationPolicyMembership($user, 1, 'admin');
 
     $application = Mockery::mock(Application::class)->makePartial();
     $application->shouldReceive('team')->andReturn((object) ['id' => 1]);
@@ -198,8 +205,7 @@ it('allows team admin to manage environment variables', function () {
 
 it('denies team member to manage environment variables', function () {
     $user = Mockery::mock(User::class)->makePartial();
-    $user->shouldReceive('isAdminOfTeam')->with(1)->andReturn(false);
-    $user->shouldReceive('roleInTeam')->with(1)->andReturn('member');
+    mockApplicationPolicyMembership($user, 1, 'member');
 
     $application = Mockery::mock(Application::class)->makePartial();
     $application->shouldReceive('team')->andReturn((object) ['id' => 1]);

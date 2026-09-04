@@ -44,31 +44,41 @@ it('normalizes environment variable keys before storing them on the model', func
     expect($env->key)->toBe('node.name');
 });
 
-it('allows Docker-compatible environment variable keys on the model', function (string $key) {
-    $env = new EnvironmentVariable;
+it('allows keys matching the configured identifier format on both models', function (string $model, string $key) {
+    $env = new $model;
     $env->key = $key;
 
     expect($env->key)->toBe($key);
 })->with([
-    'starts with digit' => '1BAD',
-    'hyphen' => 'BAD-KEY',
+    'application variable' => [EnvironmentVariable::class],
+    'shared variable' => [SharedEnvironmentVariable::class],
+])->with([
+    'uppercase underscore' => 'APP_KEY',
+    'leading underscore' => '_APP1',
     'dot' => 'node.name',
     'uppercase dots' => 'XPACK.SECURITY.ENABLED',
-    'semicolon' => 'BAD;KEY',
 ]);
 
-it('rejects environment variable keys Docker cannot represent on the model', function () {
-    $env = new EnvironmentVariable;
+it('rejects keys outside the configured identifier format on both models', function (string $model, string $key) {
+    $env = new $model;
+    $env->key = 'SAFE_KEY';
 
-    expect(function () use ($env) {
-        $env->key = 'BAD=KEY';
-    })->toThrow(InvalidArgumentException::class, 'Docker-compatible');
-});
+    expect(function () use ($env, $key) {
+        $env->key = $key;
+    })->toThrow(
+        InvalidArgumentException::class,
+        'must start with a letter or underscore'
+    );
 
-it('rejects shared environment variable keys Docker cannot represent on the model', function () {
-    $env = new SharedEnvironmentVariable;
-
-    expect(function () use ($env) {
-        $env->key = 'BAD=KEY';
-    })->toThrow(InvalidArgumentException::class, 'Docker-compatible');
-});
+    expect($env->key)->toBe('SAFE_KEY');
+})->with([
+    'application variable' => [EnvironmentVariable::class],
+    'shared variable' => [SharedEnvironmentVariable::class],
+])->with([
+    'equals sign' => 'BAD=KEY',
+    'starts with digit' => '1BAD',
+    'hyphen' => 'BAD-KEY',
+    'semicolon' => 'BAD;KEY',
+    'embedded space' => 'BAD KEY',
+    'command substitution' => 'BAD$(id)',
+]);

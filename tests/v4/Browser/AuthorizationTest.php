@@ -2,12 +2,15 @@
 
 use App\Enums\ProxyStatus;
 use App\Enums\ProxyTypes;
+use App\Models\ApplicationShare;
 use App\Models\Project;
 use App\Models\Server;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Once;
 
 uses(RefreshDatabase::class);
 
@@ -412,3 +415,62 @@ it('member does not see delete project button on project page', function () {
         ->assertDontSee('Delete project')
         ->screenshot();
 });
+
+it('global search browser revalidates a revoked application grant', function (string $action) {
+    $visible = createBrowserApplication($this->stack, [
+        'name' => 'vcc-browser-visible',
+    ]);
+    $visible->forceFill([
+        'visibility' => 'team',
+        'created_by' => $this->user->id,
+    ])->save();
+
+    $shared = createBrowserApplication($this->stack, [
+        'name' => 'vcc-browser-revoked',
+    ]);
+    $shared->forceFill([
+        'visibility' => 'custom',
+        'created_by' => $this->user->id,
+    ])->save();
+
+    $grant = ApplicationShare::create([
+        'application_id' => $shared->id,
+        'user_id' => $this->member->id,
+        'permission' => 'read',
+        'granted_by' => $this->user->id,
+    ]);
+
+    Cache::flush();
+    Once::flush();
+
+    $page = visit('/login')
+        ->assertPathIs('/login')
+        ->fill('email', 'member@example.com')
+        ->fill('password', 'password')
+        ->click('Login');
+
+    $page->assertSee('Dashboard');
+
+    $page->script(
+        "window.dispatchEvent(new CustomEvent('open-global-search'));"
+    );
+
+    $page->fill('[x-ref="searchInput"]', 'vcc-browser')
+        ->assertSee('vcc-browser-visible')
+        ->assertSee('vcc-browser-revoked')
+        ->screenshot(filename: 'global-search-before-revocation');
+
+    $grant->delete();
+
+    if ($action === 'reopen') {
+        $page->click('button[title="Close"]');
+        $page->script(
+            "window.dispatchEvent(new CustomEvent('open-global-search'));"
+        );
+    }
+
+    $page->fill('[x-ref="searchInput"]', 'vcc-browser-')
+        ->assertSee('vcc-browser-visible')
+        ->assertDontSee('vcc-browser-revoked')
+        ->screenshot(filename: 'global-search-after-revocation-'.$action);
+})->with(['type', 'reopen']);

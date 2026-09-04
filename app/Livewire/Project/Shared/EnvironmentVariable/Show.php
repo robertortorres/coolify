@@ -17,6 +17,7 @@ use App\Traits\HasSecretManagerAutocomplete;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
 
@@ -118,8 +119,23 @@ class Show extends Component
         return ValidationPatterns::environmentVariableKeyMessages('key');
     }
 
+    private function ensureApplicationEnvironmentAccess(): void
+    {
+        if ($this->env instanceof ModelsEnvironmentVariable
+            && $this->env->resourceable instanceof Application) {
+            abort_unless(auth()->user()?->can('view', $this->env), 404);
+        }
+    }
+
+    public function hydrate()
+    {
+        $this->ensureApplicationEnvironmentAccess();
+    }
+
     public function mount()
     {
+        $this->ensureApplicationEnvironmentAccess();
+
         $this->syncData();
         if ($this->env->getMorphClass() === SharedEnvironmentVariable::class) {
             $this->isSharedVariable = true;
@@ -139,6 +155,8 @@ class Show extends Component
 
     public function refresh()
     {
+        $this->ensureApplicationEnvironmentAccess();
+
         if (! $this->env->exists || ! $this->env->fresh()) {
             return;
         }
@@ -152,6 +170,8 @@ class Show extends Component
      */
     public function loadValues(): void
     {
+        $this->ensureApplicationEnvironmentAccess();
+
         if ($this->valuesLoaded) {
             return;
         }
@@ -171,6 +191,8 @@ class Show extends Component
 
     public function copyValue(): ?string
     {
+        $this->ensureApplicationEnvironmentAccess();
+
         if ($this->env->is_shown_once || $this->shouldHideValue()) {
             return null;
         }
@@ -187,7 +209,18 @@ class Show extends Component
 
     public function syncData(bool $toModel = false)
     {
+        $this->ensureApplicationEnvironmentAccess();
+
         if ($toModel) {
+            $this->authorize('update', $this->env);
+
+            if ($this->env instanceof ModelsEnvironmentVariable) {
+                $resource = $this->env->resourceable;
+                if ($resource instanceof Application) {
+                    $this->authorize('manageEnvironment', $resource);
+                }
+            }
+
             $this->key = ValidationPatterns::normalizeEnvironmentVariableKey($this->key);
 
             if ($this->isSharedVariable) {
@@ -344,6 +377,8 @@ class Show extends Component
             if ($this->is_required && $this->resource instanceof Service) {
                 event(new ApplicationConfigurationChanged($this->resource->team()->id));
             }
+        } catch (ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             return handleError($e);
         }
