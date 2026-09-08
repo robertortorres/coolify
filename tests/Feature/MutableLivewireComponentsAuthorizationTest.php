@@ -53,6 +53,57 @@ it('hides resource action menus when the user cannot manage the resource', funct
     'server actions' => ['views/livewire/server/navbar.blade.php', 'manageProxy', 'server', 'server'],
 ]);
 
+it('declares deploy authorization on the application stop confirmation', function () {
+    $source = file_get_contents(resource_path('views/livewire/project/application/heading.blade.php'));
+
+    expect($source)->toMatch(
+        '/<x-modal-confirmation\s+canGate="deploy" :canResource="\$application"/'
+    );
+});
+
+it('declares deploy authorization on the service container removal confirmation', function () {
+    $source = file_get_contents(resource_path('views/livewire/project/service/heading.blade.php'));
+
+    expect($source)->toMatch(
+        '/<x-modal-confirmation(?=[^>]*title="Confirm Container Removal\?")(?=[^>]*canGate="deploy")(?=[^>]*:canResource="\$service")[^>]*>/'
+    );
+});
+
+it('declares update authorization on service backup mutation controls', function () {
+    $importBackupView = file_get_contents(resource_path('views/livewire/project/service/import-backup.blade.php'));
+    $volumeBackupView = file_get_contents(resource_path('views/livewire/project/service/volume-backup/index.blade.php'));
+
+    expect($importBackupView)->toMatch(
+        '/<x-forms\.listbox(?=[^>]*id="selectedDatabaseUuid")(?=[^>]*canGate="update")(?=[^>]*:canResource="\$service")[^>]*>/'
+    );
+
+    expect($volumeBackupView)
+        ->toMatch('/<x-modal-input(?=[^>]*:title="\'Edit backup schedule\'")(?=[^>]*canGate="update")(?=[^>]*:canResource="\$service")[^>]*>/')
+        ->toMatch('/<x-forms\.button(?=[^>]*wire:click\.stop="backupNow\(\'database\',[^"]+")(?=[^>]*canGate="update")(?=[^>]*:canResource="\$service")[^>]*>/')
+        ->toMatch('/<x-forms\.button(?=[^>]*wire:click\.stop="backupNow\(\'storage\',[^"]+")(?=[^>]*canGate="update")(?=[^>]*:canResource="\$service")[^>]*>/');
+});
+
+it('declares update authorization on application port controls', function () {
+    $domainsView = file_get_contents(resource_path('views/livewire/project/application/domains.blade.php'));
+    $previewDomainsView = file_get_contents(resource_path('views/livewire/project/application/preview-domains.blade.php'));
+    $generalView = file_get_contents(resource_path('views/livewire/project/application/general.blade.php'));
+
+    expect($domainsView)
+        ->toMatch('/<x-forms\.button(?=[^>]*canGate="update")(?=[^>]*:canResource="\$application")[^>]*>\s*Cancel/s')
+        ->toMatch('/<x-forms\.button(?=[^>]*wire:click="confirmUseUnknownPort")(?=[^>]*canGate="update")(?=[^>]*:canResource="\$application")[^>]*>/s');
+
+    expect($previewDomainsView)
+        ->toMatch('/<x-forms\.button[^\n]*canGate="update" :canResource="\$preview->application"[\s\S]{0,150}?Cancel/')
+        ->toMatch('/<x-forms\.button[^\n]*wire:click="confirmUseUnknownPort" canGate="update"\s+:canResource="\$preview->application"/');
+
+    $portsExposesControls = str($generalView)
+        ->after("@if (\$isStatic || \$buildPack === 'static')")
+        ->before('<p class="mt-1.5 text-xs');
+
+    expect($portsExposesControls->substrCount('id="portsExposes"'))->toBe(3)
+        ->and($portsExposesControls->substrCount('canGate="update" :canResource="$application"'))->toBe(3);
+});
+
 it('keeps mutable Livewire components behind authorization checks', function (string $path, array $requiredNeedles) {
     $source = file_get_contents(base_path($path));
 
@@ -88,31 +139,30 @@ it('authorizes every volume backup form control', function (string $path, array 
     'retention controls' => [
         'resources/views/livewire/project/shared/storages/volume-backups/retention.blade.php',
         [
-            '/<x-forms\.button(?=[^>]*type="submit")(?=[^>]*canGate="update")(?=[^>]*:canResource="\$backup")[^>]*>Save<\/x-forms\.button>/s',
-            '/<x-forms\.input(?=[^>]*id="retentionAmountLocally")(?=[^>]*canGate="update")(?=[^>]*:canResource="\$backup")[^>]*\/\>/s',
-            '/<x-forms\.input(?=[^>]*id="retentionDaysLocally")(?=[^>]*canGate="update")(?=[^>]*:canResource="\$backup")[^>]*\/\>/s',
-            '/<x-forms\.input(?=[^>]*id="retentionMaxStorageLocally")(?=[^>]*canGate="update")(?=[^>]*:canResource="\$backup")[^>]*\/\>/s',
-            '/<x-forms\.input(?=[^>]*id="retentionAmountS3")(?=[^>]*canGate="update")(?=[^>]*:canResource="\$backup")[^>]*\/\>/s',
-            '/<x-forms\.input(?=[^>]*id="retentionDaysS3")(?=[^>]*canGate="update")(?=[^>]*:canResource="\$backup")[^>]*\/\>/s',
-            '/<x-forms\.input(?=[^>]*id="retentionMaxStorageS3")(?=[^>]*canGate="update")(?=[^>]*:canResource="\$backup")[^>]*\/\>/s',
+            '/<x-unsaved-bar action="save" \/>/s',
+            '/<x-forms\.input(?=[^>]*id="retentionAmountLocally")(?=[^>]*canGate="update")(?=[^>]*:canResource="\$resource")[^>]*\/\>/s',
+            '/<x-forms\.input(?=[^>]*id="retentionDaysLocally")(?=[^>]*canGate="update")(?=[^>]*:canResource="\$resource")[^>]*\/\>/s',
+            '/<x-forms\.input(?=[^>]*id="retentionMaxStorageLocally")(?=[^>]*canGate="update")(?=[^>]*:canResource="\$resource")[^>]*\/\>/s',
+            '/<x-forms\.input(?=[^>]*id="retentionAmountS3")(?=[^>]*canGate="update")(?=[^>]*:canResource="\$resource")[^>]*\/\>/s',
+            '/<x-forms\.input(?=[^>]*id="retentionDaysS3")(?=[^>]*canGate="update")(?=[^>]*:canResource="\$resource")[^>]*\/\>/s',
+            '/<x-forms\.input(?=[^>]*id="retentionMaxStorageS3")(?=[^>]*canGate="update")(?=[^>]*:canResource="\$resource")[^>]*\/\>/s',
         ],
     ],
     'S3 controls' => [
         'resources/views/livewire/project/shared/storages/volume-backups/s3.blade.php',
         [
-            '/<x-forms\.button(?=[^>]*type="submit")(?=[^>]*canGate="update")(?=[^>]*:canResource="\$backup")[^>]*>Save<\/x-forms\.button>/s',
-            '/<x-forms\.button(?=[^>]*wire:click="toggleS3")(?=[^>]*canGate="update")(?=[^>]*:canResource="\$backup")[^>]*>Enable S3<\/x-forms\.button>/s',
-            '/<x-forms\.button(?=[^>]*wire:click="toggleS3")(?=[^>]*canGate="update")(?=[^>]*:canResource="\$backup")[^>]*>Disable S3<\/x-forms\.button>/s',
-            '/<x-forms\.select(?=[^>]*id="s3StorageId")(?=[^>]*canGate="update")(?=[^>]*:canResource="\$backup")[^>]*>/s',
-            '/<x-forms\.checkbox(?=[^>]*id="disableLocalBackup")(?=[^>]*instantSave)(?=[^>]*canGate="update")(?=[^>]*:canResource="\$backup")[^>]*\/\>/s',
-            '/<x-forms\.checkbox(?=[^>]*id="disableLocalBackup")(?=[^>]*disabled)(?=[^>]*canGate="update")(?=[^>]*:canResource="\$backup")[^>]*\/\>/s',
+            '/<x-unsaved-bar action="save" \/>/s',
+            '/<x-forms\.button(?=[^>]*wire:click="toggleS3")(?=[^>]*canGate="update")(?=[^>]*:canResource="\$resource")[^>]*>\s*Enable S3\s*<\/x-forms\.button>/s',
+            '/<x-forms\.button(?=[^>]*wire:click="toggleS3")(?=[^>]*canGate="update")(?=[^>]*:canResource="\$resource")[^>]*>\s*Disable S3\s*<\/x-forms\.button>/s',
+            '/<x-forms\.listbox(?=[^>]*id="s3StorageId")(?=[^>]*canGate="update")(?=[^>]*:canResource="\$resource")[^>]*>/s',
+            '/<x-forms\.listbox(?=[^>]*id="disableLocalBackup")(?=[^>]*canGate="update")(?=[^>]*:canResource="\$resource")[^>]*>/s',
         ],
     ],
     'service domains controls' => [
         'resources/views/livewire/project/service/domains.blade.php',
         [
-            '/<x-forms\.select(?=[^>]*canGate="update")(?=[^>]*:canResource="\$service")(?=[^>]*id="newServiceApplicationId")[^>]*>/s',
-            '/<x-forms\.input(?=[^>]*canGate="update")(?=[^>]*:canResource="\$service")(?=[^>]*id="newDomain")[^>]*>/s',
+            '/<x-forms\.listbox(?=[^>]*canGate="update")(?=[^>]*:canResource="\$service")(?=[^>]*id="newServiceApplicationId")[^>]*>/s',
+            '/<x-forms\.domain-input id="newDomainParts" errorId="newDomain" \/>/s',
             '/<x-forms\.button(?=[^>]*canGate="update")(?=[^>]*:canResource="\$service")(?=[^>]*wire:click="generateDomain")[^>]*>/s',
             '/<x-forms\.button(?=[^>]*canGate="update")(?=[^>]*:canResource="\$service")(?=[^>]*type="submit")[^>]*>/s',
             '/wire:click="checkAllDns"/s',

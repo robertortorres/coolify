@@ -37,7 +37,7 @@ it('uses interactive status summaries in mobile resource headings', function () 
     $headings = [
         resource_path('views/livewire/project/application/heading.blade.php') => '<x-status-summary :status="$application->status" />',
         resource_path('views/livewire/project/database/heading.blade.php') => '<x-status-summary :status="$database->status" title="Database status" />',
-        resource_path('views/livewire/project/service/heading.blade.php') => '<x-status-summary :status="$service->status" title="Service status" container-name="Containers" />',
+        resource_path('views/livewire/project/service/heading.blade.php') => '<x-status-summary :status="$displayStatus"',
     ];
 
     foreach ($headings as $path => $statusSummary) {
@@ -82,13 +82,31 @@ it('docks desktop resource actions in the top bar instead of floating over conte
     }
 });
 
-it('links the service header missing variables warning to environment variables', function () {
+it('shows disabled deploy actions when service variables are missing', function () {
     $heading = file_get_contents(resource_path('views/livewire/project/service/heading.blade.php'));
+    $mobileActions = str($heading)
+        ->after('<div class="w-full xl:hidden">')
+        ->before("@teleport('#resource-action-hud-slot')")
+        ->toString();
+    $desktopActions = str($heading)
+        ->after("@teleport('#resource-action-hud-slot')")
+        ->before('@endteleport')
+        ->toString();
 
-    expect($heading)
-        ->toContain("route('project.service.environment-variables'")
-        ->toContain('Required variables missing')
-        ->toContain('href="{{ $environmentVariablesUrl }}"');
+    expect($mobileActions)
+        ->toContain('id="service-mobile-actions"')
+        ->toContain('aria-disabled="true"')
+        ->toContain('Deploy')
+        ->toContain('missing required env vars')
+        ->toContain('href="{{ $environmentVariablesUrl }}"')
+        ->toContain('underline')
+        ->and($desktopActions)
+        ->toContain('id="service-desktop-actions"')
+        ->toContain('aria-disabled="true"')
+        ->toContain('Deploy')
+        ->toContain('missing required env vars')
+        ->toContain('href="{{ $environmentVariablesUrl }}"')
+        ->toContain('underline');
 });
 
 it('places the account menu beside the desktop sidebar toggle while retaining it on mobile', function () {
@@ -251,6 +269,25 @@ it('promotes the primary application action in the desktop split control', funct
         ->not->toContain('Force deploy without cache');
 });
 
+it('uses container presence to choose stop or remove container actions', function () {
+    $heading = file_get_contents(resource_path('views/livewire/project/application/heading.blade.php'));
+    $mobileActions = str($heading)
+        ->after('id="application-mobile-actions"')
+        ->before("@teleport('#resource-action-hud-slot')")
+        ->toString();
+    $desktopActions = str($heading)
+        ->after('id="application-desktop-actions"')
+        ->before('@endteleport')
+        ->toString();
+
+    expect(substr_count($heading, '$application->container_present !== false'))->toBe(2)
+        ->and($mobileActions)->toContain('Remove container')
+        ->and($desktopActions)->toContain('Remove container')
+        ->and($mobileActions)->toContain('Deploy (without cache)')
+        ->and(strrpos($mobileActions, 'Deploy (without cache)'))
+        ->toBeLessThan(strrpos($mobileActions, 'Remove container'));
+});
+
 it('places the state-aware no-cache action immediately after deploy or redeploy', function () {
     $heading = file_get_contents(resource_path('views/livewire/project/application/heading.blade.php'));
     $actions = str($heading)->after('id="application-desktop-actions"')->before('@endteleport')->toString();
@@ -262,7 +299,7 @@ it('places the state-aware no-cache action immediately after deploy or redeploy'
     expect(strpos($actions, 'wire:click="deploy"'))
         ->toBeLessThan(strpos($actions, 'Redeploy (without cache)'))
         ->and(strpos($actions, 'Redeploy (without cache)'))
-        ->toBeLessThan(strpos($actions, 'Restart'));
+        ->toBeLessThan(strpos($actions, '<x-reicon name="restart"'));
 });
 
 it('uses the shared Coollabs gradient for primary resource actions in the desktop header', function () {

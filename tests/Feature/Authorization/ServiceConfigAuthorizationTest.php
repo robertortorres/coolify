@@ -16,7 +16,12 @@ use Livewire\Livewire;
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    InstanceSettings::updateOrCreate(['id' => 0]);
+    InstanceSettings::unguarded(
+        fn () => InstanceSettings::updateOrCreate(
+            ['id' => 0],
+            ['id' => 0],
+        )
+    );
 
     $this->team = Team::factory()->create();
 
@@ -187,28 +192,18 @@ test('member cannot call force deploy on service heading', function () {
 
 // --- Service Heading visibility ---
 
-test('member does not see terminal link for service', function () {
+test('member cannot access service terminal', function () {
     $this->actingAs($this->member);
     session(['currentTeam' => $this->team]);
 
-    Livewire::test(ServiceHeading::class, [
-        'service' => $this->service,
-        'parameters' => $this->serviceParams,
-        'query' => [],
-    ])
-        ->assertDontSee('Terminal');
+    expect(auth()->user()->can('canAccessTerminal'))->toBeFalse();
 });
 
-test('admin sees terminal link for service', function () {
+test('admin can access service terminal', function () {
     $this->actingAs($this->admin);
     session(['currentTeam' => $this->team]);
 
-    Livewire::test(ServiceHeading::class, [
-        'service' => $this->service,
-        'parameters' => $this->serviceParams,
-        'query' => [],
-    ])
-        ->assertSee('Terminal');
+    expect(auth()->user()->can('canAccessTerminal'))->toBeTrue();
 });
 
 test('admin sees deploy button for service', function () {
