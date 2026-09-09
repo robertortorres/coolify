@@ -43,7 +43,7 @@
                     </button>
                     <div x-show="open" x-cloak role="menu"
                         class="listbox-panel top-full! right-0! left-auto! mt-1! w-36! min-w-0!">
-                        @if (Auth::user()->isOwner())
+                        @if (Auth::user()->isInstanceAdmin() || Auth::user()->isOwner())
                             @if (data_get($member, 'pivot.role') !== 'owner')
                                 <button type="button" class="listbox-option justify-start!" wire:click="makeOwner"
                                     @click="open = false">

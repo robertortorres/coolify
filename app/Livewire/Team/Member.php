@@ -21,10 +21,7 @@ class Member extends Component
         try {
             $this->authorize('manageMembers', currentTeam());
 
-            if (Role::from(auth()->user()->role())->lt(Role::ADMIN)
-                || Role::from($this->getMemberRole())->gt(auth()->user()->role())) {
-                throw new \Exception('You are not authorized to perform this action.');
-            }
+            $this->ensureCanManageMember(Role::ADMIN);
             $teamId = currentTeam()->id;
             DB::transaction(function () use ($teamId): void {
                 $this->member->teams()->updateExistingPivot($teamId, ['role' => Role::ADMIN->value]);
@@ -42,10 +39,7 @@ class Member extends Component
         try {
             $this->authorize('manageMembers', currentTeam());
 
-            if (Role::from(auth()->user()->role())->lt(Role::OWNER)
-                || Role::from($this->getMemberRole())->gt(auth()->user()->role())) {
-                throw new \Exception('You are not authorized to perform this action.');
-            }
+            $this->ensureCanManageMember(Role::OWNER);
             $teamId = currentTeam()->id;
             DB::transaction(function () use ($teamId): void {
                 $this->member->teams()->updateExistingPivot($teamId, ['role' => Role::OWNER->value]);
@@ -63,15 +57,13 @@ class Member extends Component
         try {
             $this->authorize('manageMembers', currentTeam());
 
-            if (Role::from(auth()->user()->role())->lt(Role::ADMIN)
-                || Role::from($this->getMemberRole())->gt(auth()->user()->role())) {
-                throw new \Exception('You are not authorized to perform this action.');
-            }
+            $this->ensureCanManageMember(Role::ADMIN);
             $teamId = currentTeam()->id;
             DB::transaction(function () use ($teamId): void {
                 $this->member->teams()->updateExistingPivot($teamId, ['role' => Role::OPERATOR->value]);
                 RevokeUserTeamTokens::forUserTeam($this->member, $teamId);
             });
+            $this->auditRoleUpdate($teamId, Role::OPERATOR);
             $this->dispatch('reloadWindow');
         } catch (\Exception $e) {
             $this->dispatch('error', $e->getMessage());
@@ -83,10 +75,7 @@ class Member extends Component
         try {
             $this->authorize('manageMembers', currentTeam());
 
-            if (Role::from(auth()->user()->role())->lt(Role::ADMIN)
-                || Role::from($this->getMemberRole())->gt(auth()->user()->role())) {
-                throw new \Exception('You are not authorized to perform this action.');
-            }
+            $this->ensureCanManageMember(Role::ADMIN);
             $teamId = currentTeam()->id;
             DB::transaction(function () use ($teamId): void {
                 $this->member->teams()->updateExistingPivot($teamId, ['role' => Role::MEMBER->value]);
@@ -104,10 +93,7 @@ class Member extends Component
         try {
             $this->authorize('manageMembers', currentTeam());
 
-            if (Role::from(auth()->user()->role())->lt(Role::ADMIN)
-                || Role::from($this->getMemberRole())->gt(auth()->user()->role())) {
-                throw new \Exception('You are not authorized to perform this action.');
-            }
+            $this->ensureCanManageMember(Role::ADMIN);
             $teamId = currentTeam()->id;
             DB::transaction(function () use ($teamId): void {
                 $this->member->teams()->detach($teamId);
@@ -128,9 +114,39 @@ class Member extends Component
         }
     }
 
-    private function getMemberRole()
+    private function ensureCanManageMember(Role $requiredRole): void
     {
-        return $this->member->teams()->where('teams.id', currentTeam()->id)->first()?->pivot?->role;
+        $user = auth()->user();
+
+        if ($this->member->is($user)) {
+            throw new \Exception('You cannot change your own team role.');
+        }
+
+        $memberRole = $this->getMemberRole();
+        if (is_null($memberRole)) {
+            throw new \Exception('The selected user is not a member of this team.');
+        }
+
+        if ($user->isInstanceAdmin()) {
+            return;
+        }
+
+        $userRole = $user->role();
+        if (is_null($userRole)) {
+            throw new \Exception('You are not authorized to perform this action.');
+        }
+
+        $role = Role::from($userRole);
+        if ($role->lt($requiredRole) || Role::from($memberRole)->gt($role)) {
+            throw new \Exception('You are not authorized to perform this action.');
+        }
+    }
+
+    private function getMemberRole(): ?string
+    {
+        return $this->member->teams()
+            ->where('teams.id', currentTeam()->id)
+            ->first()?->pivot?->role;
     }
 
     private function auditRoleUpdate(int $teamId, Role $role): void

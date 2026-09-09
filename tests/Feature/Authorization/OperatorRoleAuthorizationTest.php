@@ -286,6 +286,29 @@ test('owner can change a member to operator and team tokens are revoked', functi
         ->and($this->member->tokens()->count())->toBe(0);
 });
 
+test('instance admin can change a member role without belonging to the team', function () {
+    $rootTeam = Team::factory()->create([
+        'id' => 0,
+        'name' => 'Root Team',
+    ]);
+    $instanceAdmin = User::factory()->create();
+    $rootTeam->members()->attach($instanceAdmin, ['role' => 'admin']);
+
+    expect($this->team->members()->whereKey($instanceAdmin->id)->exists())
+        ->toBeFalse();
+
+    $this->actingAs($instanceAdmin);
+
+    Livewire::test(Member::class, ['member' => $this->member])
+        ->assertSee('Make operator')
+        ->call('makeOperator')
+        ->assertDispatched('reloadWindow')
+        ->assertNotDispatched('error');
+
+    expect($this->member->fresh()->roleInTeam($this->team->id))
+        ->toBe('operator');
+});
+
 test('operator cannot change member roles', function () {
     $this->actingAs($this->operator);
 
