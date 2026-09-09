@@ -103,7 +103,7 @@ test('build-only sharing does not expose the external server', function () {
         ->not->toContain($this->sharedServer->id);
 });
 
-test('service selector remains restricted to owned servers', function () {
+test('service selector includes an authorized shared deployment server', function () {
     $this->sharedServer->sharedTeams()->attach($this->team->id, [
         'can_build' => false,
         'can_deploy' => true,
@@ -114,8 +114,23 @@ test('service selector remains restricted to owned servers', function () {
     $component->setType('docker-compose-empty');
 
     expect($component->servers->pluck('id'))
-        ->toContain($this->ownServer->id)
-        ->not->toContain($this->sharedServer->id);
+        ->toContain($this->ownServer->id, $this->sharedServer->id)
+        ->not->toContain($this->buildServer->id);
+});
+
+test('database selector includes an authorized shared deployment server', function () {
+    $this->sharedServer->sharedTeams()->attach($this->team->id, [
+        'can_build' => false,
+        'can_deploy' => true,
+    ]);
+
+    $component = new ResourceSelect;
+    $component->loadServers();
+    $component->setType('postgresql');
+
+    expect($component->servers->pluck('id'))
+        ->toContain($this->ownServer->id, $this->sharedServer->id)
+        ->not->toContain($this->buildServer->id);
 });
 
 test('manipulated server id cannot select an unauthorized server', function () {
@@ -147,28 +162,6 @@ test('authorized shared server can be selected for an application', function () 
         ->toBe($this->sharedServer->id)
         ->and($component->server_id)
         ->toBe((string) $this->sharedServer->id);
-});
-
-test('shared deployment application types are defined centrally', function () {
-    expect(shared_deployment_application_types())->toBe([
-        'public',
-        'private-deploy-key',
-        'private-gh-app',
-        'private-gitlab-app',
-        'dockerfile',
-        'docker-image',
-    ]);
-
-    foreach (shared_deployment_application_types() as $type) {
-        expect(is_shared_deployment_application_type($type))->toBeTrue();
-    }
-
-    expect(is_shared_deployment_application_type('docker-compose-empty'))
-        ->toBeFalse()
-        ->and(is_shared_deployment_application_type('postgresql'))
-        ->toBeFalse()
-        ->and(is_shared_deployment_application_type('one-click-service-ghost'))
-        ->toBeFalse();
 });
 
 test('deployable destination resolver returns an authorized shared destination', function () {
@@ -235,7 +228,7 @@ test('resource creation page accepts a shared destination for an application', f
     $this->get($url)->assertOk();
 });
 
-test('resource creation page rejects a shared destination for docker compose', function () {
+test('resource creation page accepts a shared destination for docker compose', function () {
     $this->sharedServer->sharedTeams()->attach($this->team->id, [
         'can_build' => false,
         'can_deploy' => true,
@@ -256,5 +249,5 @@ test('resource creation page rejects a shared destination for docker compose', f
     ]).'?type=docker-compose-empty&destination='.$destination->uuid
         .'&server_id='.$this->sharedServer->id;
 
-    $this->get($url)->assertRedirectToRoute('dashboard');
+    $this->get($url)->assertOk();
 });

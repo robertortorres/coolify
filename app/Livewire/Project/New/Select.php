@@ -82,7 +82,9 @@ class Select extends Component
                 $this->type = $queryType;
                 $this->server_id = $queryServerId;
                 $this->destination_uuid = $queryDestination;
-                $this->server = Server::ownedByCurrentTeam()->find($queryServerId);
+                $this->server = Server::usableDeploymentServersForTeam(
+                    currentTeam()->id
+                )->find($queryServerId);
                 $this->current_step = 'select-postgresql-type';
             }
         } catch (\Exception $e) {
@@ -361,11 +363,9 @@ class Select extends Component
         $this->loading = true;
         $this->type = $type;
 
-        if (in_array($type, shared_deployment_application_types(), true)) {
-            $this->servers = Server::usableDeploymentServersForTeam(
-                currentTeam()->id
-            )->get()->sortBy('name');
-        }
+        $this->servers = $this->allServers instanceof Collection
+            ? $this->allServers
+            : collect();
 
         switch ($type) {
             case 'postgresql':
@@ -416,13 +416,9 @@ class Select extends Component
 
     public function setServer(int $serverId)
     {
-        $query = in_array(
-            $this->type,
-            shared_deployment_application_types(),
-            true
-        )
-            ? Server::usableDeploymentServersForTeam(currentTeam()->id)
-            : Server::isUsable();
+        $query = Server::usableDeploymentServersForTeam(
+            currentTeam()->id
+        );
 
         if (! $this->includeSwarm) {
             $query
@@ -486,9 +482,14 @@ class Select extends Component
 
     public function loadServers()
     {
-        $this->servers = Server::isUsable()->get()->sortBy('name');
-        $this->buildServers = Server::isUsableBuildServer()->get()->sortBy('name');
-        $this->allServers = $this->servers->concat($this->buildServers);
-        $this->onlyBuildServerAvailable = $this->servers->isEmpty() && $this->buildServers->isNotEmpty();
+        $this->servers = Server::usableDeploymentServersForTeam(
+            currentTeam()->id
+        )->get()->sortBy('name');
+        $this->buildServers = Server::isUsableBuildServer()
+            ->get()
+            ->sortBy('name');
+        $this->allServers = $this->servers;
+        $this->onlyBuildServerAvailable = $this->servers->isEmpty()
+            && $this->buildServers->isNotEmpty();
     }
 }

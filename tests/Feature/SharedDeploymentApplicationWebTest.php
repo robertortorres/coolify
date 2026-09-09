@@ -1,10 +1,12 @@
 <?php
 
+use App\Livewire\Project\New\DockerCompose;
 use App\Livewire\Project\New\SimpleDockerfile;
 use App\Models\Application;
 use App\Models\InstanceSettings;
 use App\Models\Project;
 use App\Models\Server;
+use App\Models\Service;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -119,6 +121,80 @@ test('team can create a web application on an authorized shared server', functio
             )->whereKey($application->id)->exists()
         )
         ->toBeFalse();
+});
+
+test('team can create a Docker Compose service on an authorized shared server', function () {
+    $this->server->sharedTeams()->attach(
+        $this->deploymentTeam->id,
+        [
+            'can_build' => false,
+            'can_deploy' => true,
+        ]
+    );
+
+    Livewire::withUrlParams([
+        'destination' => $this->destination->uuid,
+    ])
+        ->test(DockerCompose::class, $this->routeParameters)
+        ->set('parameters', $this->routeParameters)
+        ->set('query', [
+            'destination' => $this->destination->uuid,
+        ])
+        ->set('dockerComposeRaw', <<<'YAML'
+services:
+  web:
+    image: nginx:alpine
+YAML)
+        ->call('submit')
+        ->assertNotDispatched('error');
+
+    $service = Service::query()
+        ->with('environment.project', 'destination.server')
+        ->sole();
+
+    expect($service->environment->project->team_id)
+        ->toBe($this->deploymentTeam->id)
+        ->and($service->server_id)
+        ->toBe($this->server->id)
+        ->and($service->destination_id)
+        ->toBe($this->destination->id)
+        ->and($service->destination->server->team_id)
+        ->toBe($this->ownerTeam->id);
+});
+
+test('revoked deployment access blocks Docker Compose service creation', function () {
+    $this->server->sharedTeams()->attach(
+        $this->deploymentTeam->id,
+        [
+            'can_build' => false,
+            'can_deploy' => true,
+        ]
+    );
+
+    $component = Livewire::withUrlParams([
+        'destination' => $this->destination->uuid,
+    ])
+        ->test(DockerCompose::class, $this->routeParameters)
+        ->set('parameters', $this->routeParameters)
+        ->set('query', [
+            'destination' => $this->destination->uuid,
+        ])
+        ->set('dockerComposeRaw', <<<'YAML'
+services:
+  web:
+    image: nginx:alpine
+YAML);
+
+    $this->server->sharedTeams()->updateExistingPivot(
+        $this->deploymentTeam->id,
+        ['can_deploy' => false]
+    );
+
+    $component
+        ->call('submit')
+        ->assertDispatched('error');
+
+    expect(Service::query()->count())->toBe(0);
 });
 
 test('crafted web submission cannot use an unauthorized shared server', function () {
