@@ -73,7 +73,7 @@ it('uses product logos for GlobalSearch database quick actions', function () {
     $bladeFile = file_get_contents(__DIR__.'/../../resources/views/livewire/global-search.blade.php');
 
     expect($bladeFile)
-        ->toContain(":src=\"'/' + item.logo\"");
+        ->toContain(":src=\"item.logo.startsWith('http') ? item.logo : '/' + item.logo\"");
 
     foreach ([
         'postgresql' => 'svgs/postgresql.svg',
@@ -143,7 +143,10 @@ it('uses contained image assets instead of inline database logos', function () {
 
     expect($blade)
         ->toContain('class="command-palette-item-icon"')
-        ->toContain('<img :src="\'/\' + item.logo" :alt="item.name">')
+        ->toContain('<img :src="item.logo.startsWith(\'http\') ? item.logo : \'/\' + item.logo"')
+        ->toContain(':alt="item.name"')
+        ->toContain('x-on:error="if (item.logo_cdn_url')
+        ->toContain('item.logo_default_url')
         ->not->toContain('$item[\'logo_html\']')
         ->not->toContain('x-html="item.logo_html"');
 

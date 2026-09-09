@@ -21,6 +21,10 @@ beforeEach(function () {
 });
 
 it('compresses and stores an uploaded profile picture on the configured local storage', function () {
+    if (! function_exists('imagecreatetruecolor')) {
+        $this->markTestSkipped('The GD extension is required for server-side avatar compression.');
+    }
+
     Storage::fake('images');
     $user = User::factory()->create(['name' => 'Test User']);
     $this->actingAs($user);
@@ -72,11 +76,14 @@ it('serves the authenticated users profile picture', function () {
     $this->withoutMiddleware()->actingAs($user)
         ->get(route('profile.avatar'))
         ->assertSuccessful()
-        ->assertHeader('content-type', 'image/jpeg');
+        ->assertHeader('content-type', 'image/jpeg')
+        ->assertHeader('cache-control', 'immutable, max-age=31536000, private');
 });
 
 it('loads an S3 profile picture from the configured CDN', function () {
-    config()->set('constants.coolify.avatar_cdn_url', 'https://avatars.example.com/media/');
+    InstanceSettings::findOrFail(0)->update([
+        'image_cdn_url' => 'https://avatars.example.com/media',
+    ]);
     Team::factory()->create(['id' => 0]);
     $storage = S3Storage::query()->create([
         'team_id' => 0,
@@ -98,7 +105,6 @@ it('loads an S3 profile picture from the configured CDN', function () {
 });
 
 it('loads an S3 profile picture directly from S3 when the CDN is not configured', function () {
-    config()->set('constants.coolify.avatar_cdn_url');
     Team::factory()->create(['id' => 0]);
     $storage = S3Storage::query()->create([
         'team_id' => 0,
@@ -120,7 +126,6 @@ it('loads an S3 profile picture directly from S3 when the CDN is not configured'
 });
 
 it('does not use an unrelated S3 storage URL for a profile picture', function () {
-    config()->set('constants.coolify.avatar_cdn_url', 'https://avatars.example.com');
     $storage = S3Storage::query()->create([
         'team_id' => Team::factory()->create()->id,
         'name' => 'Unrelated storage',
@@ -185,7 +190,7 @@ it('automatically uploads a selected profile picture and keeps the current avata
         ->toContain("processing ? 'Uploading…' : 'Browse…'")
         ->not->toContain('wire:click="uploadAvatar"')
         ->not->toContain('Upload picture')
-        ->not->toContain('type="file" x-on:change')
+        ->toContain('type="file" x-on:change="prepareAvatar($event)"')
         ->and($menu)
         ->toContain('profile_avatar_url($user)');
 });

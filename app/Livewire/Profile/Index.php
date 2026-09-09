@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Profile;
 
+use App\Services\AvatarStorageService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;

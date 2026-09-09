@@ -88,7 +88,7 @@ test('delete redirects before dispatching resource cleanup after the response', 
     Queue::assertPushed(DeleteResourceJob::class, fn (DeleteResourceJob $job) => $job->resource->is($service));
 });
 
-test('delete succeeds without password for an oauth user', function () {
+test('delete queues resource cleanup without password for an oauth user', function () {
     OauthIdentity::create([
         'user_id' => $this->user->id,
         'provider' => 'oidc',
@@ -100,7 +100,12 @@ test('delete succeeds without password for an oauth user', function () {
         ->call('delete', '')
         ->assertHasNoErrors();
 
-    expect(Application::find($this->application->id))->toBeNull();
+    expect(Application::find($this->application->id))->not->toBeNull();
+
+    Queue::assertPushed(
+        DeleteResourceJob::class,
+        fn (DeleteResourceJob $job) => $job->resource->is($this->application)
+    );
 });
 
 test('delete applies selectedActions from checkbox state', function () {
