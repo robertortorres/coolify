@@ -69,7 +69,7 @@ jobs:
           BASE=$(jq -r '.upstream.base_commit' vcc/manifest.json)
 
           mapfile -t php_files < <(
-            git diff --name-only "${BASE}...HEAD" -- '*.php'
+            git diff --name-only --diff-filter=ACMR "${BASE}...HEAD" -- '*.php'
           )
 
           if ((${#php_files[@]})); then
