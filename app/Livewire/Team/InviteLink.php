@@ -56,10 +56,15 @@ class InviteLink extends Component
             $this->authorize('manageInvitations', currentTeam());
             $this->validate();
 
-            // Prevent privilege escalation: users cannot invite someone with higher privileges
-            $userRole = auth()->user()->role();
-            if (is_null($userRole) || Role::from($this->role)->gt($userRole)) {
-                throw new \Exception('You cannot invite a user with a higher role than your own.');
+            // Instance administrators have global authority across all teams.
+            // Team-scoped administrators still cannot invite a higher role.
+            $user = auth()->user();
+            if (! $user->isInstanceAdmin()) {
+                $userRole = $user->role();
+
+                if (is_null($userRole) || Role::from($this->role)->gt($userRole)) {
+                    throw new \Exception('You cannot invite a user with a higher role than your own.');
+                }
             }
 
             $this->email = strtolower($this->email);

@@ -218,4 +218,33 @@ describe('privilege escalation prevention', function () {
             ->call('viaEmail')
             ->assertDispatched('error');
     });
+
+    test('instance admin can invite an owner to a team without membership', function () {
+        $rootTeam = Team::factory()->create([
+            'id' => 0,
+            'name' => 'Root Team',
+        ]);
+        $instanceAdmin = User::factory()->create();
+
+        $rootTeam->members()->attach($instanceAdmin->id, ['role' => 'admin']);
+
+        expect($this->team->members()->whereKey($instanceAdmin->id)->exists())
+            ->toBeFalse();
+
+        $this->actingAs($instanceAdmin);
+        session(['currentTeam' => $this->team]);
+
+        Livewire::test(InviteLink::class)
+            ->set('email', 'instance-admin-invitee@example.com')
+            ->set('role', 'owner')
+            ->call('viaLink')
+            ->assertDispatched('success')
+            ->assertNotDispatched('error');
+
+        $this->assertDatabaseHas('team_invitations', [
+            'team_id' => $this->team->id,
+            'email' => 'instance-admin-invitee@example.com',
+            'role' => 'owner',
+        ]);
+    });
 });
