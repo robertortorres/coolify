@@ -35,6 +35,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Once;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Livewire\Exceptions\MethodNotFoundException;
 use Livewire\Livewire;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
@@ -1835,15 +1836,15 @@ test('environment Show rejects direct syncData writes for shared access', functi
         ['env' => $env, 'type' => 'application']
     )->assertOk();
 
-    $component->set('value', 'forbidden-fictional-value')
-        ->call('syncData', true);
+    $component->set('value', 'forbidden-fictional-value');
+
+    expect(fn () => $component->call('syncData', true))
+        ->toThrow(MethodNotFoundException::class);
 
     expect($env->fresh()->value)->toBe('original-fictional-value');
 
     Process::assertNothingRan();
     Queue::assertNothingPushed();
-
-    $component->assertForbidden();
 })->with(['read', 'operate']);
 
 test('environment variable policy respects application sharing', function (string $access, string $ability) {
@@ -1911,8 +1912,10 @@ test('environment Show owner can persist through syncData', function () {
         ['env' => $env, 'type' => 'application']
     )
         ->assertOk()
+        ->call('loadValues')
+        ->assertOk()
         ->set('value', 'updated-fictional-value')
-        ->call('syncData', true)
+        ->call('submit')
         ->assertOk();
 
     expect($env->fresh()->value)->toBe('updated-fictional-value');

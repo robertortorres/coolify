@@ -19,14 +19,11 @@ test('settings section highlight animation is defined for 500ms', function () {
 test('settings navigation leaves room for the default tab focus ring', function () {
     $appCss = file_get_contents(resource_path('css/app.css'));
 
-    preg_match('/\.application-settings-navigation\s*\{[^}]*\}/s', $appCss, $nav);
-
     // Tab focus keeps the global ring-2 + ring-offset-2; do not thin it.
     expect($appCss)
         ->not->toContain('.menu-item:focus-visible')
         ->not->toContain('box-shadow: inset 0 0 0 0.5px var(--color-accent)')
-        ->and($nav[0] ?? '')
-        ->toContain('padding-right: 0.375rem');
+        ->toMatch('/\.application-settings-navigation\s*\{[^}]*padding:\s*0\.5rem;/s');
 });
 
 test('configuration sidebar subitems trigger section highlight on scroll', function () {
@@ -34,15 +31,26 @@ test('configuration sidebar subitems trigger section highlight on scroll', funct
     $appJs = file_get_contents(resource_path('js/app.js'));
 
     expect($blade)
-        ->toContain('scrollToSection(id)')
-        ->toContain('window.scrollToSettingsSection?.(id)')
-        ->toContain("scrollToSection('{{ \$section['id'] }}')")
+        ->not->toContain('scrollToSection(id)')
+        ->not->toContain('window.scrollToSettingsSection?.(id)')
         ->and($appJs)
         ->toContain('window.scrollToSettingsSection')
         ->toContain("el.classList.add('is-section-highlight')")
         ->toContain("behavior: 'smooth'")
         ->toContain("addEventListener('scrollend'")
         ->toContain('stableFrames');
+});
+
+test('application configuration subitems scroll without navigating the active page', function () {
+    $sidebar = file_get_contents(resource_path('views/components/application/configuration-sidebar.blade.php'));
+
+    expect($sidebar)
+        ->toContain("@if (\$menuItem['active'])")
+        ->toContain('<button type="button" class="menu-subitem"')
+        ->toContain("window.scrollToSettingsSection?.('{{ \$section['id'] }}')")
+        ->toContain('@else')
+        ->toContain("href=\"{{ route(\$menuItem['route'], \$applicationRouteParameters) }}#{{ \$section['id'] }}\"")
+        ->not->toContain("if (document.getElementById('{{ \$section['id'] }}'))");
 });
 
 test('postgresql general navigation lists each in-page settings section', function () {

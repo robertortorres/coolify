@@ -79,12 +79,12 @@ it('renders a highlighted enable backup button and a regular disable backup butt
     $s3View = file_get_contents(resource_path('views/livewire/project/database/backup-edit/s3.blade.php'));
 
     expect($view)
-        ->toContain('wire:target="toggleEnabled" isHighlighted>Enable Backup</x-forms.button>')
-        ->toContain('wire:target="toggleEnabled">Disable Backup</x-forms.button>')
+        ->toMatch('/wire:target="toggleEnabled" isHighlighted>\s*Enable backup\s*<\/x-forms\.button>/s')
+        ->toMatch('/wire:target="toggleEnabled">\s*Disable backup\s*<\/x-forms\.button>/s')
         ->not->toContain('label="Backup Enabled"')
         ->and($s3View)
         ->toContain('wire:target="toggleS3" isHighlighted')
-        ->toContain('wire:target="toggleS3">Disable S3</x-forms.button>')
+        ->toMatch('/wire:target="toggleS3">\s*Disable S3\s*<\/x-forms\.button>/s')
         ->not->toContain('label="S3 Enabled"');
 });
 
@@ -131,7 +131,7 @@ it('shows and saves S3 retention while S3 backups are disabled', function () {
         'availableS3Storages' => $this->team->s3s,
         'section' => 'retention',
     ])
-        ->assertSee('S3 Storage Retention')
+        ->assertSee('S3 backups')
         ->set('databaseBackupRetentionAmountS3', 12)
         ->set('databaseBackupRetentionDaysS3', 30)
         ->set('databaseBackupRetentionMaxStorageS3', 4.5)
@@ -181,33 +181,34 @@ it('splits standalone database backup settings and executions across dedicated u
         ->assertDontSee('Cleanup Failed Backups');
 
     $s3View = file_get_contents(resource_path('views/livewire/project/database/backup-edit/s3.blade.php'));
-    expect(strpos($s3View, '<span>S3 Storage</span>'))
-        ->toBeLessThan(strpos($s3View, 'label="Disable Local Backup"'));
+    expect(strpos($s3View, '<h2>S3 storage</h2>'))
+        ->toBeLessThan(strpos($s3View, 'label="Local copy"'));
 
     $this->get($generalUrl.'/retention')
         ->assertOk()
-        ->assertSee('Local Backup Retention')
-        ->assertSee('S3 Storage Retention')
-        ->assertSee('Number of backups to keep')
+        ->assertSee('Local backups')
+        ->assertSee('S3 backups')
+        ->assertSee('Backups to keep')
         ->assertDontSee('Frequency')
         ->assertDontSee('Cleanup Failed Backups');
 
     $this->get($generalUrl.'/executions')
         ->assertOk()
-        ->assertSee('<h2 class="py-0">Executions</h2>', false)
+        ->assertSee('Executions')
         ->assertDontSee('Executions <span', false)
-        ->assertSee('Cleanup Failed Backups')
+        ->assertSee('Clean failed backups')
         ->assertDontSee('Frequency')
-        ->assertDontSee('Number of backups to keep');
+        ->assertDontSee('Backups to keep');
 
     $this->get($generalUrl.'/danger')
         ->assertOk()
         ->assertSee('Danger Zone')
-        ->assertSee('Delete Scheduled Backup')
-        ->assertSee('Delete Backups and Schedule')
+        ->assertSee('Delete backup schedule')
+        ->assertSee('Delete schedule')
+        ->assertSee('optionally its backup archives')
         ->assertDontSee('Frequency')
-        ->assertDontSee('Number of backups to keep')
-        ->assertDontSee('Cleanup Failed Backups');
+        ->assertDontSee('Backups to keep')
+        ->assertDontSee('Clean failed backups');
 });
 
 it('enables and disables a scheduled database backup from the title action', function () {
@@ -218,10 +219,10 @@ it('enables and disables a scheduled database backup from the title action', fun
 
     $component = Livewire::test(BackupEdit::class, ['backup' => $backup->fresh(), 'availableS3Storages' => $this->team->s3s])
         ->assertSet('backupEnabled', false)
-        ->assertSee('Enable Backup')
+        ->assertSee('Enable backup')
         ->call('toggleEnabled')
         ->assertSet('backupEnabled', true)
-        ->assertSee('Disable Backup');
+        ->assertSee('Disable backup');
 
     expect($backup->refresh()->enabled)->toBeTruthy();
 
@@ -247,6 +248,7 @@ it('redirects to executions after queuing a database backup with unusable S3 sto
         'timeout' => 3600,
     ]);
     $database = $backup->database;
+    $database->update(['status' => 'running:healthy']);
     $parameters = [
         'project_uuid' => $database->project()->uuid,
         'environment_uuid' => $database->environment->uuid,
@@ -468,7 +470,7 @@ it('allows S3 backups to be disabled when no usable storage remains', function (
 
 });
 
-it('shows when S3 backups are currently disabled', function () {
+it('shows S3 storage settings while S3 backups are disabled', function () {
     createS3StorageForBackupEditValidationTest($this->team);
     $backup = createBackupForEditValidationTest($this->team, [
         'save_s3' => false,
@@ -476,8 +478,9 @@ it('shows when S3 backups are currently disabled', function () {
     ]);
 
     Livewire::test(BackupEdit::class, ['backup' => $backup->fresh(), 'availableS3Storages' => $this->team->s3s, 'section' => 's3'])
-        ->assertSee('S3 Storage')
-        ->assertSee('(currently disabled)');
+        ->assertSet('saveS3', false)
+        ->assertSee('S3 storage')
+        ->assertSee('Enable S3');
 });
 
 it('saves selected S3 storage immediately when it changes', function () {
@@ -509,7 +512,7 @@ it('subscribes to database status broadcasts so Backup Now can refresh without a
         ->toHaveKey('databaseUpdated');
 });
 
-it('shows Backup Now after refresh when the database becomes running', function () {
+it('enables Back up now after refresh when the database becomes running', function () {
     $backup = createBackupForEditValidationTest($this->team, [
         'enabled' => true,
     ]);
@@ -521,17 +524,21 @@ it('shows Backup Now after refresh when the database becomes running', function 
         'availableS3Storages' => $this->team->s3s,
         'status' => 'exited:unhealthy',
     ])
-        ->assertDontSee('Backup Now')
+        ->assertSee('Back up now')
         ->assertSet('status', 'exited:unhealthy');
+
+    expect($component->html())->toMatch('/<button\s+disabled[^>]*wire:click="backupNow"/s');
 
     $database->update(['status' => 'running:healthy']);
 
     $component->call('refreshStatus')
         ->assertSet('status', 'running:healthy')
-        ->assertSee('Backup Now');
+        ->assertSee('Back up now');
+
+    expect($component->html())->not->toMatch('/<button\s+disabled[^>]*wire:click="backupNow"/s');
 });
 
-it('hides Backup Now after refresh when the database stops', function () {
+it('disables Back up now after refresh when the database stops', function () {
     $backup = createBackupForEditValidationTest($this->team, [
         'enabled' => true,
     ]);
@@ -543,12 +550,33 @@ it('hides Backup Now after refresh when the database stops', function () {
         'availableS3Storages' => $this->team->s3s,
         'status' => 'running:healthy',
     ])
-        ->assertSee('Backup Now')
+        ->assertSee('Back up now')
         ->assertSet('status', 'running:healthy');
 
     $database->update(['status' => 'exited:unhealthy']);
 
     $component->call('refreshStatus')
         ->assertSet('status', 'exited:unhealthy')
-        ->assertDontSee('Backup Now');
+        ->assertSee('Back up now');
+
+    expect($component->html())->toMatch('/<button\s+disabled[^>]*wire:click="backupNow"/s');
+});
+
+it('renders S3 backup selectors outside the scrollable modal', function () {
+    createS3StorageForBackupEditValidationTest($this->team);
+    $backup = createBackupForEditValidationTest($this->team);
+    $html = Livewire::test(BackupEdit::class, [
+        'backup' => $backup->fresh(),
+        'availableS3Storages' => $this->team->s3s,
+        'section' => 's3',
+    ])->html();
+
+    $dom = new DOMDocument;
+    @$dom->loadHTML($html);
+    $xpath = new DOMXPath($dom);
+    foreach (['s3StorageId-panel', 'disableLocalBackup-panel'] as $panelId) {
+        $panels = $xpath->query('//template[@x-teleport="body"]/div[@id="'.$panelId.'"]');
+        expect($panels->length)->toBe(1);
+        expect($panels->item(0)->getAttribute('style'))->toContain('position: fixed', 'z-index: 9999');
+    }
 });

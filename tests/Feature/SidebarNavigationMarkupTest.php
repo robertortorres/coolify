@@ -27,7 +27,10 @@ it('initializes persisted sidebar state before enabling layout transitions', fun
     $layout = file_get_contents(resource_path('views/layouts/app.blade.php'));
 
     expect($layout)
-        ->toContain("collapsed: localStorage.getItem('sidebarCollapsed') === 'true'")
+        ->toContain("userCollapsed: localStorage.getItem('sidebarCollapsed') === 'true'")
+        ->toContain('return this.userCollapsed || (this.autoCollapse && this.hasSecondBar);')
+        ->toContain('this.userCollapsed = this.collapsed;')
+        ->toContain("localStorage.setItem('sidebarCollapsed', this.userCollapsed);")
         ->toContain('sidebarReady: false')
         ->toContain(":class=\"[collapsed ? 'lg:w-16' : 'lg:w-56', sidebarReady ? 'transition-[width] duration-200' : '']\"")
         ->toContain(":class=\"[collapsed ? 'lg:ml-16' : 'lg:ml-56', sidebarReady ? 'transition-[margin] duration-200' : '']\"");
@@ -77,7 +80,10 @@ it('draws the desktop header border only above the main content', function () {
 it('separates the mobile sidebar from the page with a visible border', function () {
     $layout = file_get_contents(resource_path('views/layouts/app.blade.php'));
 
-    expect($layout)->toContain('max-w-56 min-w-0 flex-col border-l border-neutral-200 bg-white shadow-xl dark:border-white/[0.12] dark:bg-panel');
+    expect($layout)
+        ->toContain('w-72 max-w-[85vw] min-w-0 flex-col overflow-hidden rounded-l-2xl')
+        ->toContain('border-l border-neutral-200 bg-white')
+        ->toContain('dark:border-white/[0.12] dark:bg-panel');
 });
 
 it('keeps the mobile navbar above floating configuration warnings', function () {
@@ -85,7 +91,7 @@ it('keeps the mobile navbar above floating configuration warnings', function () 
     $popup = file_get_contents(resource_path('views/components/popup-small.blade.php'));
 
     expect($layout)
-        ->toContain('class="relative z-[1000] lg:hidden"')
+        ->toContain('class="mobile-sidebar-sheet relative z-[1000] lg:hidden"')
         ->and($popup)->toContain('z-999');
 });
 
@@ -141,7 +147,7 @@ it('shows section titles and descriptions above settings navigation on smaller s
         ->toContain('<header class="settings-mobile-header xl:hidden">')
         ->toContain("<h1 class=\"settings-mobile-title\">{$title}</h1>")
         ->toContain("<p class=\"settings-mobile-description\">{$description}</p>")
-        ->toContain('<section class="application-settings-workspace w-full max-w-[1180px]">')
+        ->toContain('<section class="application-settings-workspace w-full max-w-none">')
         ->and($css)
         ->toContain('.settings-mobile-title')
         ->toContain('.settings-mobile-description')
@@ -162,7 +168,8 @@ it('uses the structured sidebar and action HUD for server navigation', function 
     $terminal = file_get_contents(resource_path('views/livewire/project/shared/execute-container-command.blade.php'));
 
     expect($navbar)
-        ->toContain('class="hidden xl:fixed xl:top-14 xl:right-4 xl:z-30 xl:flex')
+        ->toContain("@teleport('#resource-action-hud-slot')")
+        ->toContain('class="hidden xl:flex xl:w-auto xl:items-center"')
         ->toContain('<x-resource-heading-tabs class="hidden" aria-hidden="true">')
         ->toContain('dark:bg-coolgray-100! dark:text-white!')
         ->and($sidebar)

@@ -1,8 +1,11 @@
 <?php
 
 use App\Livewire\Project\Application\Advanced as ApplicationAdvanced;
+use App\Livewire\Project\Application\General as ApplicationGeneral;
 use App\Livewire\Project\Application\Heading as ApplicationHeading;
 use App\Livewire\Project\Application\Rollback as ApplicationRollback;
+use App\Livewire\Project\Shared\EnvironmentVariable\Show as EnvironmentVariableShow;
+use App\Livewire\Project\Shared\GetLogs;
 use App\Models\Application;
 use App\Models\InstanceSettings;
 use App\Models\Project;
@@ -10,9 +13,11 @@ use App\Models\Server;
 use App\Models\StandaloneDocker;
 use App\Models\Team;
 use App\Models\User;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Livewire\Exceptions\MethodNotFoundException;
 use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
@@ -168,6 +173,62 @@ test('member cannot update application general settings', function () {
     expect($this->member->can('update', $this->application))->toBeFalse();
 });
 
+test('member cannot reset application labels', function () {
+    $this->actingAs($this->member);
+    session(['currentTeam' => $this->team]);
+
+    $originalLabels = $this->application->custom_labels;
+
+    $component = app(ApplicationGeneral::class);
+    $component->application = $this->application;
+    $component->isContainerLabelReadonlyEnabled = true;
+
+    expect(fn () => $component->resetDefaultLabels(true))
+        ->toThrow(AuthorizationException::class);
+
+    expect($this->application->fresh()->custom_labels)->toBe($originalLabels);
+});
+
+test('member can load application environment variables without revealing their values', function () {
+    $this->actingAs($this->member);
+    session(['currentTeam' => $this->team]);
+
+    $environmentVariable = $this->application->environment_variables()->create([
+        'key' => 'SECRET_KEY',
+        'value' => 'super-secret-value',
+        'is_preview' => false,
+    ]);
+
+    Livewire::test(EnvironmentVariableShow::class, [
+        'env' => $environmentVariable,
+        'type' => 'application',
+    ])
+        ->call('loadValues')
+        ->assertSuccessful()
+        ->assertSet('valuesLoaded', true)
+        ->assertSet('isValueHidden', true)
+        ->assertSet('value', null)
+        ->assertSet('real_value', null);
+});
+
+test('member cannot save application log timestamp settings', function () {
+    $this->actingAs($this->member);
+    session(['currentTeam' => $this->team]);
+
+    $originalValue = $this->application->settings->is_include_timestamps;
+
+    Livewire::test(GetLogs::class, [
+        'resource' => $this->application,
+        'server' => $this->server,
+        'container' => $this->application->uuid,
+    ])
+        ->set('showTimeStamps', ! $originalValue)
+        ->call('instantSave')
+        ->assertForbidden();
+
+    expect($this->application->settings->fresh()->is_include_timestamps)->toBe($originalValue);
+});
+
 // --- Application Advanced Livewire actions ---
 
 test('member cannot save application advanced settings', function () {
@@ -186,6 +247,21 @@ test('member cannot submit application advanced settings', function () {
     Livewire::test(ApplicationAdvanced::class, ['application' => $this->application])
         ->call('submit')
         ->assertDispatched('error');
+});
+
+test('the private application advanced syncData helper is not remotely callable', function () {
+    $this->actingAs($this->member);
+    session(['currentTeam' => $this->team]);
+
+    $original = (bool) $this->application->settings->is_force_https_enabled;
+
+    $component = Livewire::test(ApplicationAdvanced::class, ['application' => $this->application])
+        ->set('isForceHttpsEnabled', ! $original);
+
+    expect(fn () => $component->call('syncData', true))
+        ->toThrow(MethodNotFoundException::class);
+
+    expect((bool) $this->application->settings->fresh()->is_force_https_enabled)->toBe($original);
 });
 
 // --- Application Rollback Livewire actions ---
@@ -210,20 +286,18 @@ test('member cannot rollback image', function () {
 
 // --- Application Heading visibility ---
 
-test('member does not see terminal link for application', function () {
+test('member cannot access application terminal', function () {
     $this->actingAs($this->member);
     session(['currentTeam' => $this->team]);
 
-    Livewire::test(ApplicationHeading::class, ['application' => $this->application])
-        ->assertDontSee('Terminal');
+    expect(auth()->user()->can('canAccessTerminal'))->toBeFalse();
 });
 
-test('admin sees terminal link for application', function () {
+test('admin can access application terminal', function () {
     $this->actingAs($this->admin);
     session(['currentTeam' => $this->team]);
 
-    Livewire::test(ApplicationHeading::class, ['application' => $this->application])
-        ->assertSee('Terminal');
+    expect(auth()->user()->can('canAccessTerminal'))->toBeTrue();
 });
 
 // --- Cross-team isolation ---
