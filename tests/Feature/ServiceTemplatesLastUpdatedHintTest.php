@@ -46,12 +46,14 @@ it('returns local, CDN, and default logo fallbacks for every service', function 
         ->and($services['pydio-cells']['logo_default_url'])->toBe(asset('svgs/default.webp'));
 });
 
-it('crops wide database wordmarks to their icon artwork', function () {
+it('returns dedicated database logo assets', function () {
     $databases = collect((new Select)->loadServices()['databases'])->keyBy('id');
 
-    expect($databases['keydb']['logo'])->toContain('viewBox="0 0 160 182"')
-        ->and($databases['dragonfly']['logo'])->toContain('viewBox="0 0 44 44"', 'viewBox="0 0 88 88"')
-        ->and($databases['clickhouse']['logo'])->toContain('viewBox="0 0 24 26"');
+    expect($databases['keydb']['logo'])->toBe(asset('svgs/resources/keydb.svg'))
+        ->and($databases['keydb']['logoDark'])->toBe(asset('svgs/resources/keydb-dark.svg'))
+        ->and($databases['dragonfly']['logo'])->toBe(asset('svgs/resources/dragonfly.svg'))
+        ->and($databases['dragonfly']['logoDark'])->toBe(asset('svgs/resources/dragonfly-dark.svg'))
+        ->and($databases['clickhouse']['logo'])->toBe(asset('svgs/resources/clickhouse.svg'));
 });
 
 it('prefers embedded service template git timestamps from the templates bundle', function () {
@@ -124,7 +126,6 @@ it('renders the service templates last updated hint placeholder', function () {
     $view->assertSee('Updated');
     $view->assertSee('serviceTemplatesLastUpdated');
     $view->assertSee('service.templateLastUpdated');
-    $view->assertSee('aria-controls="resource-type-filter-options"', false);
     $view->assertSee('aria-controls="resource-category-options"', false);
     $view->assertSee('@click.outside="closeCategoryFilter()"', false);
     $view->assertSee('@keydown.escape.stop="closeCategoryFilter(true)"', false);
