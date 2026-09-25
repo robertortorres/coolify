@@ -380,7 +380,7 @@ it('loads shell variables and passes dotted variables through the build-time env
         );
         chmod($launcherPath, 0700);
 
-        $process = new Process(['/bin/bash', $launcherPath, '/bin/bash', '-c', 'printenv X.VALUE; printenv DOTTED.VALUE']);
+        $process = new Process(['/bin/sh', $launcherPath, '/bin/sh', '-c', 'printenv X.VALUE; printenv DOTTED.VALUE']);
         $process->mustRun();
 
         expect($process->getOutput())
@@ -817,7 +817,7 @@ it('filters buildpack control vars from dockerfile arg injection', function () {
 
     invokeDeploymentJobMethod($job, $reflection, 'add_build_env_variables_to_dockerfile');
 
-    expect($job->writtenDockerfile)->toContain('ARG APP_ENV=production');
+    expect($job->writtenDockerfile)->toContain("ARG APP_ENV='production'");
     expect($job->writtenDockerfile)->toContain('ARG COOLIFY_BUILD_SECRETS_HASH=');
     expect($job->writtenDockerfile)->not->toContain('ARG NIXPACKS_NODE_VERSION=');
     expect($job->writtenDockerfile)->not->toContain('ARG RAILPACK_NODE_VERSION=');
