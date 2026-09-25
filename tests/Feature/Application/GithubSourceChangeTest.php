@@ -334,8 +334,8 @@ describe('GitHub Source Change Component', function () {
             ->assertSet('webhook_endpoint', 'http://staging.example.com')
             ->assertSet('custom_webhook_endpoint', 'https://staging.example.com')
             ->assertSet('use_custom_webhook_endpoint', true)
-            ->assertSee('Use custom webhook endpoint')
-            ->assertSee('Selected endpoint')
+            ->assertSee('Use a custom endpoint')
+            ->assertSee('Webhook endpoint')
             ->assertSee('Custom endpoint')
             ->assertSee('createGithubApp(webhookEndpoint, useCustomWebhookEndpoint, customWebhookEndpoint');
     });
@@ -808,6 +808,6 @@ describe('GitHub Source Change Component', function () {
             ->assertSee('Finished GitHub App')
             ->assertSee('Connected')
             ->assertSee('Incomplete GitHub App')
-            ->assertSee('Setup required');
+            ->assertSee('Setup incomplete');
     });
 });
