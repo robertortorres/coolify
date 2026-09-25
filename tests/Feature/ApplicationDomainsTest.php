@@ -88,6 +88,14 @@ beforeEach(function () {
     ]);
 });
 
+function runQueuedApplicationDomainDnsChecks($component): void
+{
+    Queue::pushed(CheckDomainDnsJob::class)
+        ->each(fn (CheckDomainDnsJob $job) => $job->handle());
+
+    $component->call('pollDnsChecks');
+}
+
 it('uses safe domain validation rules on the domains form', function () {
     $component = new Domains;
     $method = new ReflectionMethod($component, 'rules');
@@ -401,7 +409,9 @@ it('generates a domain when configuring a preview', function () {
         ->toContain('43.');
 });
 
-it('manages preview domains and their dns status', function () {
+it('manages preview domains and queues their dns checks', function () {
+    Queue::fake();
+
     $preview = ApplicationPreview::create([
         'application_id' => $this->application->id,
         'pull_request_id' => 44,
@@ -412,7 +422,7 @@ it('manages preview domains and their dns status', function () {
     Livewire::test(PreviewDomains::class, ['preview' => $preview])
         ->assertSet('domainRows.0.url', 'https://44.example.com')
         ->call('checkDomainDns', 0)
-        ->assertSet('domainRows.0.dns_status', 'skipped')
+        ->assertSet('domainRows.0.dns_status', 'checking')
         ->set('newDomainParts.host', 'second.example.com')
         ->call('addDomain')
         ->assertHasNoErrors()
@@ -423,6 +433,12 @@ it('manages preview domains and their dns status', function () {
 
     expect($preview->fresh()->fqdn)->toBe('https://second.example.com')
         ->and($preview->fresh()->domain_dns_statuses)->not->toBeNull();
+
+    Queue::assertPushed(
+        CheckDomainDnsJob::class,
+        fn (CheckDomainDnsJob $job): bool => $job->url === 'https://44.example.com'
+            && $job->resource->is($preview)
+    );
 });
 
 it('removes the intended preview domains by stable identities after reindexing', function () {
@@ -1190,13 +1206,19 @@ it('saves redirect after confirming a conflict for an auto-added www pair', func
 });
 
 it('marks dns status as skipped when dns validation is disabled', function () {
+    Queue::fake();
+
     $this->application->update([
         'fqdn' => 'https://app.example.com',
     ]);
 
-    Livewire::test(Domains::class, ['application' => $this->application->fresh()])
+    $component = Livewire::test(Domains::class, ['application' => $this->application->fresh()])
         ->call('checkAllDns')
-        ->assertSet('domainRows.0.dns_status', 'skipped');
+        ->assertSet('domainRows.0.dns_status', 'checking');
+
+    runQueuedApplicationDomainDnsChecks($component);
+
+    $component->assertSet('domainRows.0.dns_status', 'skipped');
 
     $this->application->refresh();
     $statuses = $this->application->domain_dns_statuses;
@@ -1290,6 +1312,8 @@ it('hides dns message text when dns status is ok', function () {
 });
 
 it('persists dns status after checking a domain', function () {
+    Queue::fake();
+
     $settings = InstanceSettings::get();
     $settings->is_dns_validation_enabled = true;
     $settings->save();
@@ -1299,9 +1323,13 @@ it('persists dns status after checking a domain', function () {
         'fqdn' => $domain,
     ]);
 
-    Livewire::test(Domains::class, ['application' => $this->application->fresh()])
+    $component = Livewire::test(Domains::class, ['application' => $this->application->fresh()])
         ->call('checkDomainDns', 0)
-        ->assertSet('domainRows.0.dns_status', 'failed');
+        ->assertSet('domainRows.0.dns_status', 'checking');
+
+    runQueuedApplicationDomainDnsChecks($component);
+
+    $component->assertSet('domainRows.0.dns_status', 'failed');
 
     $this->application->refresh();
     $entry = $this->application->domain_dns_statuses[$domain] ?? null;
@@ -1404,6 +1432,8 @@ it('does not overwrite a newer queued dns check with stale completed component s
 });
 
 it('resolves hostname server addresses to a real ip for dns messages', function () {
+    Queue::fake();
+
     $this->server->update(['ip' => 'localhost']);
     $this->application->update([
         'fqdn' => 'https://app.example.com',
@@ -1424,7 +1454,10 @@ it('resolves hostname server addresses to a real ip for dns messages', function 
         ->and(filter_var($resolvedIp, FILTER_VALIDATE_IP))->not->toBeFalse()
         ->and($component->get('domainRows.0.expected_ip'))->toBe($resolvedIp);
 
-    $component->call('checkAllDns');
+    $component->call('checkAllDns')
+        ->assertSet('domainRows.0.dns_status', 'checking');
+
+    runQueuedApplicationDomainDnsChecks($component);
 
     $message = $component->get('domainRows.0.dns_message');
     $recordType = dnsRecordTypeForIp($resolvedIp);
@@ -1440,6 +1473,8 @@ it('resolves hostname server addresses to a real ip for dns messages', function 
 });
 
 it('uses short aaaa guidance when the server ip is ipv6', function () {
+    Queue::fake();
+
     $this->server->update(['ip' => '2001:db8::10']);
     $this->application->update([
         'fqdn' => 'https://this-domain-should-not-resolve-for-coolify-aaaa.invalid',
@@ -1450,13 +1485,18 @@ it('uses short aaaa guidance when the server ip is ipv6', function () {
     $settings->save();
 
     $component = Livewire::test(Domains::class, ['application' => $this->application->fresh()])
-        ->call('checkDomainDns', 0);
+        ->call('checkDomainDns', 0)
+        ->assertSet('domainRows.0.dns_status', 'checking');
+
+    runQueuedApplicationDomainDnsChecks($component);
 
     expect($component->get('serverIp'))->toBe('2001:db8::10')
         ->and($component->get('domainRows.0.dns_message'))->toBe('Required DNS record type AAAA pointing to 2001:db8::10');
 });
 
 it('uses short a-record guidance for compose applications', function () {
+    Queue::fake();
+
     $this->application->update([
         'build_pack' => 'dockercompose',
         'docker_compose_raw' => "services:\n  web:\n    image: nginx:alpine\n",
@@ -1473,7 +1513,10 @@ it('uses short a-record guidance for compose applications', function () {
     $this->server->update(['ip' => '172.16.0.3']);
 
     $component = Livewire::test(Domains::class, ['application' => $this->application->fresh()])
-        ->call('checkDomainDns', 0);
+        ->call('checkDomainDns', 0)
+        ->assertSet('domainRows.0.dns_status', 'checking');
+
+    runQueuedApplicationDomainDnsChecks($component);
 
     expect($component->get('domainRows.0.dns_message'))->toBe('Required DNS record type A pointing to 172.16.0.3')
         ->and($component->get('domainRows.0.dns_status'))->toBe('failed');
