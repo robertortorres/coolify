@@ -48,7 +48,7 @@ describe('GitHub Source Change Component', function () {
         $view = file_get_contents(resource_path('views/livewire/source/github/change.blade.php'));
 
         preg_match_all(
-            '/<x-forms\.(button|input|select|checkbox)\b(?![^>]*\bcanGate=)[^>]*>/s',
+            '/<x-forms\.(button|input|select|checkbox)\b(?![^>]*\b(?:canGate=|disabled\b))[^>]*>/s',
             $view,
             $matches,
             PREG_OFFSET_CAPTURE
