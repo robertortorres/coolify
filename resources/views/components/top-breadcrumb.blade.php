@@ -126,9 +126,9 @@
         ])->filter()
         : collect();
 @endphp
-<div class="flex min-w-0 items-center gap-0.5 text-[13px]">
+<div class="flex w-full min-w-0 items-center gap-0.5 text-[13px]">
     {{-- Team --}}
-    <div class="shrink-0" x-data="{ collapsed: false }">
+    <div class="min-w-0 shrink" x-data="{ collapsed: false }">
         <livewire:switch-team />
     </div>
 
