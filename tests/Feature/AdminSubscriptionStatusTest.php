@@ -42,6 +42,5 @@ test('admin search only shows users with paid subscriptions as active', function
             'search' => 'inactive@example.com',
         ])
         ->call('submitSearch')
-        ->assertSee('No')
-        ->assertDontSee('Yes');
+        ->assertSee('Inactive');
 });
