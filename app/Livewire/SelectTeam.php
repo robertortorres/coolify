@@ -29,9 +29,10 @@ class SelectTeam extends Component
     public function selectTeam(int $teamId)
     {
         $user = auth()->user();
-        if (! $user->teams->contains('id', $teamId)) {
+        if (! $user->isInstanceAdmin() && ! $user->teams->contains('id', $teamId)) {
             return;
         }
+
         $team = Team::find($teamId);
         if (! $team) {
             return;
@@ -43,8 +44,13 @@ class SelectTeam extends Component
 
     public function render(): View
     {
+        $user = auth()->user();
+        $teams = $user->isInstanceAdmin()
+            ? Team::query()->orderBy('name')->get()
+            : $user->teams;
+
         return view('livewire.select-team', [
-            'teams' => auth()->user()->teams,
+            'teams' => $teams,
         ])->layout('layouts.simple');
     }
 }

@@ -231,6 +231,50 @@ it('does not persist current_team_id while impersonating', function () {
         ->and($user->fresh()->current_team_id)->toBe($second->id);
 });
 
+it('restores an external stored team for an instance admin', function () {
+    $rootTeam = Team::find(0) ?? Team::factory()->create(['id' => 0]);
+    $instanceAdmin = User::factory()->create();
+    $rootTeam->members()->attach($instanceAdmin->id, ['role' => 'admin']);
+
+    $targetTeam = Team::factory()->create();
+    $instanceAdmin->update(['current_team_id' => $targetTeam->id]);
+
+    expect($instanceAdmin->teams()->whereKey($targetTeam->id)->exists())->toBeFalse()
+        ->and($instanceAdmin->fresh()->resolveStoredTeam()?->is($targetTeam))->toBeTrue();
+});
+
+it('lets an instance admin select an external team from the selection screen', function () {
+    $rootTeam = Team::find(0) ?? Team::factory()->create(['id' => 0]);
+    $instanceAdmin = User::factory()->create();
+    $rootTeam->members()->attach($instanceAdmin->id, ['role' => 'admin']);
+
+    $targetTeam = Team::factory()->create([
+        'name' => 'External Instance Admin Team',
+    ]);
+
+    expect($instanceAdmin->teams()->whereKey($targetTeam->id)->exists())->toBeFalse();
+
+    Livewire::actingAs($instanceAdmin)
+        ->test(SelectTeam::class)
+        ->assertSee('External Instance Admin Team')
+        ->call('selectTeam', $targetTeam->id)
+        ->assertRedirect(route('dashboard'));
+
+    expect($instanceAdmin->fresh()->current_team_id)->toBe($targetTeam->id)
+        ->and(data_get(session('currentTeam'), 'id'))->toBe($targetTeam->id);
+});
+
+it('rejects an existing external stored team for a regular user', function () {
+    [$user] = userWithTwoTeams();
+    $externalTeam = Team::factory()->create();
+
+    expect($user->teams()->whereKey($externalTeam->id)->exists())->toBeFalse();
+
+    $user->update(['current_team_id' => $externalTeam->id]);
+
+    expect($user->fresh()->resolveStoredTeam())->toBeNull();
+});
+
 it('bounces users who already have an active team away from the select screen', function () {
     [$user, , $second] = userWithTwoTeams();
     $user->update(['current_team_id' => $second->id]);

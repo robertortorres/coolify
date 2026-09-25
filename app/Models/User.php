@@ -398,7 +398,10 @@ class User extends Authenticatable implements SendsEmail
     public function resolveStoredTeam(): ?Team
     {
         if (! is_null($this->current_team_id)) {
-            $storedTeam = $this->teams->firstWhere('id', $this->current_team_id);
+            $storedTeam = $this->isInstanceAdmin()
+                ? Team::find($this->current_team_id)
+                : $this->teams->firstWhere('id', $this->current_team_id);
+
             if ($storedTeam) {
                 return $storedTeam;
             }
