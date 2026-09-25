@@ -53,6 +53,7 @@ uZx9iFkCELtxrh31QJ68AAAAEXNhaWxANzZmZjY2ZDJlMmRkAQIDBA==
  */
 test('can clear application domains and save successfully', function () {
     $application = Application::factory()->create([
+        'name' => 'clear-domains-null',
         'environment_id' => $this->environment->id,
         'destination_id' => $this->destination->id,
         'destination_type' => StandaloneDocker::class,
@@ -79,6 +80,7 @@ test('can clear application domains and save successfully', function () {
 
 test('can clear application domains via empty string and save successfully', function () {
     $application = Application::factory()->create([
+        'name' => 'clear-domains-empty',
         'environment_id' => $this->environment->id,
         'destination_id' => $this->destination->id,
         'destination_type' => StandaloneDocker::class,
@@ -103,13 +105,14 @@ test('can clear application domains via empty string and save successfully', fun
     expect($application->fqdn)->toBeNull();
 });
 
-test('can update general settings when the application has a wildcard domain', function () {
+test('can update general settings while preserving multiple domains', function () {
     $application = Application::factory()->create([
+        'name' => 'preserve-multiple-domains',
         'environment_id' => $this->environment->id,
         'destination_id' => $this->destination->id,
         'destination_type' => StandaloneDocker::class,
         'build_pack' => 'nixpacks',
-        'fqdn' => 'https://example.com,https://*.example.com',
+        'fqdn' => 'https://example.com,https://www.example.com',
         'static_image' => 'nginx:alpine',
         'base_directory' => '/',
         'ports_exposes' => '3000',
@@ -117,13 +120,21 @@ test('can update general settings when the application has a wildcard domain', f
         'redirect' => 'no',
     ]);
 
+    expect($application->fqdn)
+        ->toBe('https://example.com,https://www.example.com')
+        ->and($application->fresh()->fqdn)
+        ->toBe('https://example.com,https://www.example.com');
+
     Livewire::test(General::class, ['application' => $application])
         ->assertSuccessful()
+        ->assertSet('fqdn', 'https://example.com,https://www.example.com')
         ->set('startCommand', 'node scripts/serve-prod.mjs')
+        ->assertSet('fqdn', 'https://example.com,https://www.example.com')
         ->call('submit', false)
-        ->assertHasNoErrors();
+        ->assertHasNoErrors()
+        ->assertSet('fqdn', 'https://example.com,https://www.example.com');
 
     $application->refresh();
-    expect($application->fqdn)->toBe('https://example.com,https://*.example.com')
+    expect($application->fqdn)->toBe('https://example.com,https://www.example.com')
         ->and($application->start_command)->toBe('node scripts/serve-prod.mjs');
 });
