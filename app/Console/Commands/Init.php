@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Actions\Shared\CleanupInterruptedExecutions;
 use App\Enums\ActivityTypes;
 use App\Enums\ApplicationDeploymentStatus;
 use App\Jobs\CheckHelperImageJob;
@@ -10,12 +11,9 @@ use App\Models\ApplicationDeploymentQueue;
 use App\Models\Environment;
 use App\Models\InstanceSettings;
 use App\Models\ScheduledDatabaseBackup;
-use App\Models\ScheduledDatabaseBackupExecution;
-use App\Models\ScheduledTaskExecution;
 use App\Models\Server;
 use App\Models\StandalonePostgresql;
 use App\Models\User;
-use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
@@ -105,12 +103,10 @@ class Init extends Command
             echo "Could not cleanup inprogress deployments: {$e->getMessage()}\n";
         }
 
+        $executionCleanup = app(CleanupInterruptedExecutions::class);
+
         try {
-            $updatedTaskCount = ScheduledTaskExecution::where('status', 'running')->update([
-                'status' => 'failed',
-                'message' => 'Marked as failed during Coolify startup - job was interrupted',
-                'finished_at' => Carbon::now(),
-            ]);
+            $updatedTaskCount = $executionCleanup->scheduledTasks();
 
             if ($updatedTaskCount > 0) {
                 echo "Marked {$updatedTaskCount} stuck scheduled task executions as failed\n";
@@ -120,11 +116,7 @@ class Init extends Command
         }
 
         try {
-            $updatedBackupCount = ScheduledDatabaseBackupExecution::where('status', 'running')->update([
-                'status' => 'failed',
-                'message' => 'Marked as failed during Coolify startup - job was interrupted',
-                'finished_at' => Carbon::now(),
-            ]);
+            $updatedBackupCount = $executionCleanup->databaseBackups();
 
             if ($updatedBackupCount > 0) {
                 echo "Marked {$updatedBackupCount} stuck database backup executions as failed\n";
