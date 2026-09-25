@@ -138,7 +138,18 @@
                     @if ($application->build_pack === 'dockercompose' && is_null($application->docker_compose_raw))
                         <span class="px-2 text-[13px] text-neutral-500 dark:text-fg-dim">Load a Compose file to deploy.</span>
                     @else
-                        <div class="resource-heading-menus shrink-0">
+                        <div class="resource-heading-menus flex shrink-0 items-center gap-0.5">
+                            @foreach ($applicationMenuItems as $item)
+                                <a href="{{ route($item['route'], $parameters) }}"
+                                    @class([
+                                        'app-tab shrink-0',
+                                        'app-tab-active' => $item['active'],
+                                    ])
+                                    @if ($item['active']) aria-current="page" @endif
+                                    {{ wireNavigate() }}>
+                                    {{ $item['label'] }}
+                                </a>
+                            @endforeach
                             <x-applications.links :application="$application" />
                         </div>
                         @can('deploy', $application)
