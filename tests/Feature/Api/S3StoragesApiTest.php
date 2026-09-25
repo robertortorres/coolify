@@ -1,12 +1,12 @@
 <?php
 
+use App\Models\AuditEvent;
 use App\Models\InstanceSettings;
 use App\Models\S3Storage;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Once;
 
@@ -517,28 +517,29 @@ describe('POST /api/v1/s3-storages/{uuid}/validate', function () {
         $response->assertStatus(404);
     });
 
-    test('writes an audit log entry when validating storage', function () {
+    test('writes an audit event when validating storage', function () {
         $storage = createS3StorageForTeam($this->team, ['name' => 'Audit Storage']);
 
         $disk = Mockery::mock(FilesystemAdapter::class);
         $disk->expects('files')->once()->andReturn([]);
         Storage::expects('build')->once()->andReturn($disk);
 
-        $auditChannel = Mockery::mock();
-        $auditChannel->shouldReceive('info')
-            ->once()
-            ->with('api.s3_storage.validated', Mockery::on(function (array $context) use ($storage) {
-                return $context['s3_storage_uuid'] === $storage->uuid
-                    && $context['s3_storage_name'] === 'Audit Storage'
-                    && $context['valid'] === true;
-            }));
-
-        Log::shouldReceive('channel')->with('audit')->andReturn($auditChannel);
-
         $this->withHeaders([
             'Authorization' => 'Bearer '.$this->bearerToken,
             'Content-Type' => 'application/json',
         ])->postJson("/api/v1/s3-storages/{$storage->uuid}/validate")
             ->assertOk();
+
+        $event = AuditEvent::query()
+            ->where('event', 'api.s3_storage.validated')
+            ->where('team_id', $this->team->id)
+            ->where('resource_uuid', $storage->uuid)
+            ->firstOrFail();
+
+        expect($event->source)->toBe('api')
+            ->and($event->action)->toBe('validated')
+            ->and($event->resource_type)->toBe('s3_storage')
+            ->and($event->metadata['s3_storage_name'])->toBe('Audit Storage')
+            ->and($event->metadata['valid'])->toBeTrue();
     });
 });
