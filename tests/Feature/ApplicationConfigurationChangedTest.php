@@ -174,5 +174,12 @@ it('falls back to real diff against empty snapshot when no deployment snapshot e
     expect($diff->isChanged())->toBeTrue()
         ->and($diff->isLegacyFallback())->toBeFalse()
         ->and($diff->count())->toBeGreaterThan(0)
-        ->and(collect($diff->changes())->pluck('label')->toArray())->toContain('Build command');
+        ->and(
+            collect($diff->changes())
+                ->pluck('section')
+                ->diff(['environment', 'storage'])
+                ->isEmpty()
+        )->toBeTrue()
+        ->and(collect($diff->changes())->pluck('label')->toArray())
+        ->not->toContain('Build command');
 });
