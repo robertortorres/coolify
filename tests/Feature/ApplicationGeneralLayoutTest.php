@@ -53,5 +53,5 @@ test('onboarding uses the reusable advanced settings component', function () {
         ->not->toContain('<x-forms.collapsible class="pt-4" content-class="grid gap-4">')
         ->not->toContain('The following commands are for advanced use cases.')
         ->and($onboarding)
-        ->toContain('<x-forms.collapsible title="Advanced Connection Settings"');
+        ->toContain('<x-forms.collapsible title="Advanced Settings"');
 });
