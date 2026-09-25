@@ -156,6 +156,10 @@ class Server extends BaseModel
             }
         });
         static::created(function ($server) {
+            // Long-running processes and transactional tests can reuse an ID
+            // that still points to an older Server instance in the identity map.
+            static::flushIdentityMap();
+
             ServerSetting::create([
                 'server_id' => $server->id,
             ]);
