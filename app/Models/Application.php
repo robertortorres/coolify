@@ -267,6 +267,7 @@ class Application extends BaseModel
             'noindex_domains' => 'array',
             'domain_dns_statuses' => 'array',
             'domain_port_overrides' => 'array',
+            'custom_healthcheck_found' => 'boolean',
             'restart_count' => 'integer',
             'max_restart_count' => 'integer',
             'restart_limit_reached' => 'boolean',
