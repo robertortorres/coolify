@@ -11,6 +11,9 @@ class ScheduledDatabaseBackup extends BaseModel
     protected function casts(): array
     {
         return [
+            'enabled' => 'boolean',
+            'save_s3' => 'boolean',
+            'disable_local_backup' => 'boolean',
             'dump_all' => 'boolean',
             'database_backup_retention_max_storage_locally' => 'float',
             'database_backup_retention_max_storage_s3' => 'float',
