@@ -1441,9 +1441,17 @@ class ApplicationDeploymentJob implements ShouldBeEncrypted, ShouldQueue
      */
     private function resolve_environment_variable_raw(EnvironmentVariable $env): string
     {
-        $value = $env->get_real_environment_variables_with_server($env->value, $this->application, $this->mainServer);
+        $value = $env->get_real_environment_variables_with_server(
+            $env->value,
+            $this->application,
+            $this->mainServer
+        ) ?? '';
 
-        return $this->substitute_remote_secrets($value ?? '', $env->key);
+        if (! RemoteSecretReferences::containsReference($value)) {
+            return $value;
+        }
+
+        return $this->substitute_remote_secrets($value, $env->key);
     }
 
     /**
@@ -2080,6 +2088,7 @@ class ApplicationDeploymentJob implements ShouldBeEncrypted, ShouldQueue
                 $this->application_deployment_queue->addLogEntry('Creating build-time .env file in /artifacts (outside Docker context).', hidden: true);
                 $this->execute_remote_command([
                     executeInDocker($this->deployment_uuid, "echo '$envs_base64' | base64 -d | tee ".self::BUILD_TIME_ENV_PATH.' > /dev/null'),
+                    'skip_command_log' => true,
                 ]);
 
                 if (isDev()) {
@@ -2125,6 +2134,7 @@ class ApplicationDeploymentJob implements ShouldBeEncrypted, ShouldQueue
             $contents_base64 = base64_encode($contents);
             $this->execute_remote_command([
                 executeInDocker($this->deployment_uuid, "echo '$contents_base64' | base64 -d | tee {$path} > /dev/null"),
+                'skip_command_log' => true,
             ]);
         }
 
