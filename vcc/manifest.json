@@ -7,12 +7,12 @@
   "upstream": {
     "repository": "https://github.com/coollabsio/coolify",
     "branch": "next",
-    "base_commit": "58d074721c7dbb7c75c24ceb7b93fbf1912cbf1b",
-    "synchronized_at": "2026-08-25"
+    "base_commit": "33f453912ad5298620b513269119e404c68f41dc",
+    "synchronized_at": "2026-09-12"
   },
   "vcc": {
     "branch": "vcc/main",
-    "checkpoint_commit": "bdd1cf6ca",
+    "checkpoint_commit": "059455e8e",
     "image_repository": "ghcr.io/robertortorres/coolify",
     "image_status": "planned"
   },
