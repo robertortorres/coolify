@@ -12,7 +12,12 @@ use Illuminate\Support\Facades\Queue;
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    InstanceSettings::updateOrCreate(['id' => 0], ['is_api_enabled' => true]);
+    InstanceSettings::unguarded(fn () => InstanceSettings::query()->updateOrCreate(
+        ['id' => 0],
+        ['is_api_enabled' => true],
+    ));
+
+    expect(InstanceSettings::find(0))->not->toBeNull();
 
     $this->team = Team::factory()->create();
     $this->user = User::factory()->create();
