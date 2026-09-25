@@ -4,6 +4,7 @@ namespace App\Livewire\Security;
 
 use App\Models\InstanceSettings;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\PersonalAccessToken;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
@@ -21,6 +22,7 @@ class ApiTokens extends Component
     public array $permissions = ['read'];
 
     public array $expirationOptions = [
+        0 => 'Never',
         7 => '7 days',
         30 => '30 days',
         60 => '60 days',
@@ -136,7 +138,7 @@ class ApiTokens extends Component
 
             $this->validate([
                 'description' => 'required|min:3|max:255',
-                'expiresInDays' => 'nullable|integer|in:7,30,60,90,365',
+                'expiresInDays' => 'nullable|integer|in:0,7,30,60,90,365',
             ]);
             $expiresAt = $this->expiresInDays ? now()->addDays($this->expiresInDays) : null;
             $token = auth()->user()->createToken($this->description, array_values($this->permissions), $expiresAt);
@@ -149,6 +151,8 @@ class ApiTokens extends Component
             $this->getTokens();
             // Do NOT strip the numeric prefix (e.g. "69|...") — Sanctum uses it to index and look up tokens.
             session()->flash('token', $token->plainTextToken);
+        } catch (ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             return handleError($e, $this);
         }
