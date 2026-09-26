@@ -4,10 +4,10 @@
  * Application configuration Rollback nav must use the reicon "time-back" glyph.
  */
 test('application rollback menu uses the time-back icon', function () {
-    $configuration = file_get_contents(resource_path('views/livewire/project/application/configuration.blade.php'));
+    $configurationSidebar = file_get_contents(resource_path('views/components/application/configuration-sidebar.blade.php'));
     $reicon = file_get_contents(resource_path('views/components/reicon.blade.php'));
 
-    expect($configuration)
+    expect($configurationSidebar)
         ->toMatch("/'Rollback'\\s*=>\\s*'time-back'/")
         ->not->toMatch("/'Rollback'\\s*=>\\s*'logout'/");
 
