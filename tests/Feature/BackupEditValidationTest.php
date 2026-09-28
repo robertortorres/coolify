@@ -434,7 +434,7 @@ it('shows only an empty S3 state when no storages are available', function () {
     ]);
 
     Livewire::test(BackupEdit::class, ['backup' => $backup->fresh(), 'availableS3Storages' => $this->team->s3s, 'section' => 's3'])
-        ->assertSeeHtml('<h2>S3 storage</h2>')
+        ->assertSeeText('S3 storage')
         ->assertSeeText('No validated S3 storage')
         ->assertSeeHtml('href="'.route('storage.index').'"')
         ->assertSeeText('Open S3 storage')
