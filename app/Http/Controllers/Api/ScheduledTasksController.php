@@ -27,12 +27,16 @@ class ScheduledTasksController extends Controller
 
     private function resolveApplication(Request $request, int $teamId): ?Application
     {
-        return Application::ownedByCurrentTeamAPI($teamId)->where('uuid', $request->uuid)->first();
+        return Application::ownedByCurrentTeamAPI($teamId)
+            ->where('uuid', $request->route('uuid'))
+            ->first();
     }
 
     private function resolveService(Request $request, int $teamId): ?Service
     {
-        return Service::whereRelation('environment.project.team', 'id', $teamId)->where('uuid', $request->uuid)->first();
+        return Service::whereRelation('environment.project.team', 'id', $teamId)
+            ->where('uuid', $request->route('uuid'))
+            ->first();
     }
 
     private function listTasks(Application|Service $resource): JsonResponse
@@ -164,7 +168,7 @@ class ScheduledTasksController extends Controller
             ], 422);
         }
 
-        $task = $resource->scheduled_tasks()->where('uuid', $request->task_uuid)->first();
+        $task = $resource->scheduled_tasks()->where('uuid', $request->route('task_uuid'))->first();
         if (! $task) {
             return response()->json(['message' => 'Scheduled task not found.'], 404);
         }
@@ -187,7 +191,7 @@ class ScheduledTasksController extends Controller
     {
         $this->authorize('update', $resource);
 
-        $task = $resource->scheduled_tasks()->where('uuid', $request->task_uuid)->first();
+        $task = $resource->scheduled_tasks()->where('uuid', $request->route('task_uuid'))->first();
         if (! $task) {
             return response()->json(['message' => 'Scheduled task not found.'], 404);
         }
@@ -211,7 +215,7 @@ class ScheduledTasksController extends Controller
     {
         $this->authorize('view', $resource);
 
-        $task = $resource->scheduled_tasks()->where('uuid', $request->task_uuid)->first();
+        $task = $resource->scheduled_tasks()->where('uuid', $request->route('task_uuid'))->first();
         if (! $task) {
             return response()->json(['message' => 'Scheduled task not found.'], 404);
         }
@@ -229,7 +233,7 @@ class ScheduledTasksController extends Controller
     {
         $this->authorize('update', $resource);
 
-        $task = $resource->scheduled_tasks()->where('uuid', $request->task_uuid)->first();
+        $task = $resource->scheduled_tasks()->where('uuid', $request->route('task_uuid'))->first();
         if (! $task) {
             return response()->json(['message' => 'Scheduled task not found.'], 404);
         }

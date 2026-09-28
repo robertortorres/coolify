@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Shared\CleanupInterruptedExecutions;
 use App\Models\ScheduledDatabaseBackup;
 use App\Models\ScheduledDatabaseBackupExecution;
 use App\Models\ScheduledTask;
@@ -8,7 +9,6 @@ use App\Models\StandalonePostgresql;
 use App\Models\Team;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Notification;
 
 uses(RefreshDatabase::class);
@@ -25,7 +25,7 @@ afterEach(function () {
     Carbon::setTestNow();
 });
 
-test('app:init marks stuck scheduled task executions as failed', function () {
+test('startup cleanup marks stuck scheduled task executions as failed', function () {
     // Create a team for the scheduled task
     $team = Team::factory()->create();
 
@@ -55,8 +55,7 @@ test('app:init marks stuck scheduled task executions as failed', function () {
         'finished_at' => Carbon::now()->subMinutes(14),
     ]);
 
-    // Run the app:init command
-    Artisan::call('app:init');
+    (new CleanupInterruptedExecutions)->scheduledTasks();
 
     // Refresh models from database
     $runningExecution1->refresh();
@@ -81,20 +80,19 @@ test('app:init marks stuck scheduled task executions as failed', function () {
     Notification::assertNothingSent();
 });
 
-test('app:init marks stuck database backup executions as failed', function () {
+test('startup cleanup marks stuck database backup executions as failed', function () {
     // Create a team for the scheduled backup
     $team = Team::factory()->create();
 
-    // Create a database
-    $database = StandalonePostgresql::factory()->create([
+    // The cleanup only needs a valid scheduled backup parent. The
+    // polymorphic database itself is not accessed by this operation.
+    $scheduledBackup = ScheduledDatabaseBackup::create([
         'team_id' => $team->id,
-    ]);
-
-    // Create a scheduled backup
-    $scheduledBackup = ScheduledDatabaseBackup::factory()->create([
-        'team_id' => $team->id,
-        'database_id' => $database->id,
+        'database_id' => 1,
         'database_type' => StandalonePostgresql::class,
+        'frequency' => '0 0 * * *',
+        'enabled' => true,
+        'save_s3' => false,
     ]);
 
     // Create multiple backup executions with 'running' status
@@ -118,8 +116,7 @@ test('app:init marks stuck database backup executions as failed', function () {
         'finished_at' => Carbon::now()->subMinutes(20),
     ]);
 
-    // Run the app:init command
-    Artisan::call('app:init');
+    (new CleanupInterruptedExecutions)->databaseBackups();
 
     // Refresh models from database
     $runningBackup1->refresh();
@@ -144,7 +141,7 @@ test('app:init marks stuck database backup executions as failed', function () {
     Notification::assertNothingSent();
 });
 
-test('app:init handles cleanup when no stuck executions exist', function () {
+test('startup cleanup handles cleanup when no stuck executions exist', function () {
     // Create a team
     $team = Team::factory()->create();
 
@@ -168,11 +165,10 @@ test('app:init handles cleanup when no stuck executions exist', function () {
         'finished_at' => Carbon::now()->subMinutes(19),
     ]);
 
-    // Run the app:init command (should not fail)
-    $exitCode = Artisan::call('app:init');
+    $cleanup = new CleanupInterruptedExecutions;
 
-    // Assert command succeeded
-    expect($exitCode)->toBe(0);
+    expect($cleanup->scheduledTasks())->toBe(0)
+        ->and($cleanup->databaseBackups())->toBe(0);
 
     // Assert all executions remain unchanged
     expect(ScheduledTaskExecution::where('status', 'running')->count())->toBe(0)
@@ -185,7 +181,9 @@ test('app:init handles cleanup when no stuck executions exist', function () {
 
 test('cleanup does not send notifications even when team has notification settings', function () {
     // Create a team with notification settings enabled
-    $team = Team::factory()->create([
+    $team = Team::factory()->create();
+
+    $team->emailNotificationSettings->update([
         'smtp_enabled' => true,
         'smtp_from_address' => 'test@example.com',
     ]);
@@ -202,8 +200,7 @@ test('cleanup does not send notifications even when team has notification settin
         'started_at' => Carbon::now()->subMinutes(5),
     ]);
 
-    // Run the app:init command
-    Artisan::call('app:init');
+    (new CleanupInterruptedExecutions)->scheduledTasks();
 
     // Refresh model
     $runningExecution->refresh();

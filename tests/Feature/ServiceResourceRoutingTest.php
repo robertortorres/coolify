@@ -503,8 +503,10 @@ test('service backups have explicit settings actions for database and storage sc
     $dom = new DOMDocument;
     @$dom->loadHTML($html);
     $xpath = new DOMXPath($dom);
-    $buttons = $xpath->query('//button[contains(., "Settings")]');
+    $buttons = $xpath->query('//button[@aria-label="Edit backup schedule"]');
     $actions = [];
+
+    expect($buttons->length)->toBe(2);
     foreach ($buttons as $button) {
         $actions[] = $button->getAttribute('wire:click.stop');
     }

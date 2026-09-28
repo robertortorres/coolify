@@ -40,32 +40,26 @@ beforeEach(function () {
     ]);
 });
 
-it('hides the breadcrumb trail on mobile while keeping the current status visible', function () {
+it('shows the compact application heading below xl while keeping desktop actions in the top bar', function () {
     $response = $this->get(route('project.application.configuration', [
         'project_uuid' => $this->project->uuid,
         'environment_uuid' => $this->environment->uuid,
         'application_uuid' => $this->application->uuid,
     ]));
 
-    $response->assertSuccessful();
-    $response->assertSee('flex min-w-0 flex-col gap-1 md:hidden', false);
-    $response->assertSee('flex min-w-0 items-center text-xs text-neutral-400', false);
-    $response->assertSee('hidden flex-wrap items-center gap-y-1 md:flex', false);
-    $response->assertSee('flex flex-wrap items-center gap-1', false);
-    $response->assertSee(
-        'scrollbar flex min-h-10 w-full flex-nowrap items-center gap-6 overflow-x-scroll overflow-y-hidden pb-1 whitespace-nowrap md:w-auto md:overflow-visible',
-        false,
-    );
-    $response->assertSee('shrink-0', false);
-    $response->assertSee('Actions');
-    $response->assertSee('dropdown-item-touch', false);
-    $response->assertSee('hidden flex-wrap items-center gap-2 md:flex', false);
-    $response->assertSee('window.innerWidth >= 768', false);
-    $response->assertSee(':style="panelStyles"', false);
-    $response->assertSee('absolute top-full z-50 mt-1 min-w-max max-w-[calc(100vw-1rem)] md:top-0 md:mt-6', false);
-    $response->assertSee('Pure Dockerfile Example');
-    $response->assertSee('Running');
-    $response->assertSee('pt-2 pb-4 md:pb-10', false);
+    $response
+        ->assertSuccessful()
+        ->assertSee('mb-3 w-full xl:hidden', false)
+        ->assertSee('flex min-w-0 flex-col items-start gap-2', false)
+        ->assertSee('relative flex w-full min-w-0 items-center gap-2', false)
+        ->assertSee('application-mobile-actions', false)
+        ->assertSee('hidden w-full items-center xl:flex xl:w-auto', false)
+        ->assertSee('resource-heading-navbar application-heading-actions', false)
+        ->assertSee('Pure Dockerfile Example')
+        ->assertSee('Running')
+        ->assertSee('w-full max-w-none pb-4 md:pb-6 lg:pb-0', false);
 
-    expect($response->getContent())->not->toContain('hidden pt-2 pb-10 md:flex');
+    expect($response->getContent())
+        ->not->toContain('flex min-w-0 flex-col gap-1 md:hidden')
+        ->not->toContain('hidden pt-2 pb-10 md:flex');
 });

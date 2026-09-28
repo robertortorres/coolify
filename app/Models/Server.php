@@ -156,6 +156,10 @@ class Server extends BaseModel
             }
         });
         static::created(function ($server) {
+            // Long-running processes and transactional tests can reuse an ID
+            // that still points to an older Server instance in the identity map.
+            static::flushIdentityMap();
+
             ServerSetting::create([
                 'server_id' => $server->id,
             ]);
@@ -1023,17 +1027,20 @@ $siteAddress {
         return Carbon::parse($this->sentinel_updated_at)->isAfter(now()->subSeconds($this->waitBeforeDoingSshCheck()));
     }
 
-    public function isSentinelEnabled()
+    public function isSentinelEnabled(): bool
     {
-        return ($this->isMetricsEnabled() || $this->isServerApiEnabled()) && ! $this->isBuildServer();
+        return ! $this->isBuildServer()
+            && ! $this->isSwarm()
+            && ! $this->isForceDisabled()
+            && ! $this->isTransferredAway();
     }
 
-    public function isMetricsEnabled()
+    public function isMetricsEnabled(): bool
     {
         return $this->settings->is_metrics_enabled;
     }
 
-    public function isServerApiEnabled()
+    public function isServerApiEnabled(): bool
     {
         return $this->settings->is_sentinel_enabled;
     }

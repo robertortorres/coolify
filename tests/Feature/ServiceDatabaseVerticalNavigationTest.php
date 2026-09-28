@@ -34,7 +34,7 @@ it('matches application action bar behavior for services and databases', functio
         expect($heading)
             ->toContain('@teleport(\'#resource-action-hud-slot\')')
             ->toContain('xl:w-auto')
-            ->toContain('<x-resource-heading-overflow')
+            ->not->toContain('<x-resource-heading-overflow')
             ->not->toContain('hidden lg:block lg:h-12');
     }
 
@@ -76,6 +76,24 @@ it('groups application navigation by user workflow', function () {
         ->toContain("'Operations' => ['Resource Operations', 'Resource Limits', 'Rollback', 'Tags', 'Danger Zone']");
 });
 
+it('uses the same responsive settings grid for applications services and databases', function () {
+    $sidebars = [
+        resource_path('views/components/application/configuration-sidebar.blade.php'),
+        resource_path('views/components/service/configuration-sidebar.blade.php'),
+        resource_path('views/components/database/configuration-sidebar.blade.php'),
+    ];
+
+    foreach ($sidebars as $sidebar) {
+        expect(file_get_contents($sidebar))
+            ->toContain('grid grid-cols-2 gap-0.5')
+            ->toContain('sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-1');
+    }
+
+    expect(file_get_contents($sidebars[0]))
+        ->not->toContain('aria-label="Configuration menu"')
+        ->not->toContain('menuOpen');
+});
+
 it('shows the database sidebar on backup pages', function () {
     $configuration = file_get_contents(resource_path('views/livewire/project/database/configuration.blade.php'));
     $backups = file_get_contents(resource_path('views/livewire/project/database/backup/index.blade.php'));
@@ -108,7 +126,7 @@ it('combines service database and storage backups in one section', function () {
         ->not->toContain('data-table-header scheduled-backups-table-grid')
         ->not->toContain('>Database backups</h3>')
         ->not->toContain('>Storage backups</h3>')
-        ->toContain("'application-settings-section-body w-full'")
+        ->toContain("'application-settings-section-body relative w-full'")
         ->toContain('class="data-table w-full overflow-x-auto"')
         ->toContain('backup-table-grid service-backup-table-grid')
         ->not->toContain('<span class="text-right">Executions</span>')
@@ -209,18 +227,42 @@ it('loads every backup editor section when the modal opens and switches tabs loc
         ->not->toContain('wire:click="selectScheduleSection');
 });
 
+it('keeps the backup schedule modal height stable while switching sections', function () {
+    $modal = file_get_contents(resource_path('views/components/modal-input.blade.php'));
+    $index = file_get_contents(resource_path('views/livewire/project/service/volume-backup/index.blade.php'));
+
+    expect($index)->toContain('isLarge fixedHeight')
+        ->and($modal)
+        ->toContain("'sm:h-[40rem]' => \$fixedHeight");
+});
+
+it('shows S3 section descriptions from the title helper', function () {
+    $volumeS3 = file_get_contents(resource_path('views/livewire/project/shared/storages/volume-backups/s3.blade.php'));
+    $databaseS3 = file_get_contents(resource_path('views/livewire/project/database/backup-edit/s3.blade.php'));
+
+    foreach ([$volumeS3, $databaseS3] as $view) {
+        expect($view)
+            ->toContain('<x-application.settings-section title="S3 storage"')
+            ->not->toContain('<div class="application-settings-section-header">')
+            ->not->toContain('<h2>S3 storage</h2>');
+    }
+});
+
 it('adds a back up now action to every service backup schedule row', function () {
     $index = file_get_contents(resource_path('views/livewire/project/service/volume-backup/index.blade.php'));
     $styles = file_get_contents(resource_path('css/app.css'));
 
     expect($index)
         ->toContain('<span class="text-right">Actions</span>')
-        ->toContain('<div class="min-w-[59rem]">')
+        ->toContain('<div class="min-w-[64rem]">')
         ->toContain("wire:click.stop=\"backupNow('database',")
         ->toContain("wire:click.stop=\"backupNow('storage',")
         ->toContain('<x-forms.button')
         ->toContain('Back up now</x-forms.button>')
-        ->not->toContain('class="icon-button shrink-0"')
+        ->toContain('defaultClass="icon-button shrink-0"')
+        ->toContain('aria-label="Edit backup schedule"')
+        ->toContain('<x-reicon name="settings" class="size-4" />')
+        ->not->toContain('>Settings</x-forms.button>')
         ->not->toContain('class="contents cursor-pointer"');
 
     expect($styles)
@@ -254,8 +296,7 @@ it('offers downloads from the service backup executions list', function () {
     $view = file_get_contents(resource_path('views/livewire/project/service/backup-executions.blade.php'));
 
     expect($component)
-        ->toContain("route('download.backup'")
-        ->toContain("route('download.volume-backup'")
+        ->toContain("route(\$isDatabase ? 'download.backup' : 'download.volume-backup'")
         ->and($view)
         ->toContain('<span class="text-right">Actions</span>')
         ->toContain('aria-label="Download backup"')

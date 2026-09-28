@@ -152,7 +152,7 @@ test('settings advanced unsaved bar scopes dirty tracking away from instantSave 
 
     expect($contents)
         ->toContain('x-unsaved-bar')
-        ->toContain('targets="custom_dns_servers,allowed_ips,webhook_allowed_internal_hosts,webhook_allow_localhost,domain_connect_private_key"')
+        ->toContain('targets="custom_dns_servers,allowed_ips,webhook_allowed_internal_hosts,webhook_allow_localhost,domain_connect_private_key,image_cdn_url"')
         ->toContain('onChange="instantSave"')
         ->not->toMatch('/x-unsaved-bar\s+action="submit"\s*\/>/');
 });

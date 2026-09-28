@@ -88,6 +88,10 @@ jobs:
             tests/Unit/Policies \
             tests/Feature/InstanceAdminAuthorizationTest.php \
             tests/Feature/SwitchTeamTest.php \
+            tests/Feature/OauthControllerTest.php \
+            tests/Feature/Authorization/ApiTokenPermissionTest.php \
+            tests/Feature/Team/ActiveTeamPersistenceTest.php \
+            tests/Feature/Team/TeamInvitationPrivilegeEscalationTest.php \
             tests/Feature/Api/ServerMetricsApiTest.php \
             tests/Feature/ServicePredefinedNetworkParserTest.php \
             tests/Feature/SharedBuildServerTest.php \

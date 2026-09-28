@@ -104,7 +104,12 @@
                                 <x-application.settings-section title="General"
                                     description="Connection and authentication settings for this private GitHub source.">
                                     <x-slot:actions>
-                                        <x-forms.button type="button" wire:click.prevent="updateGithubAppName">
+                                        <x-forms.button type="button" wire:click.prevent="testConnection"
+                                            canGate="view" :canResource="$github_app">
+                                            Test Connection
+                                        </x-forms.button>
+                                        <x-forms.button type="button" wire:click.prevent="updateGithubAppName"
+                                            canGate="update" :canResource="$github_app">
                                             <x-reicon name="refresh" class="size-3.5" />
                                             Sync name
                                         </x-forms.button>
@@ -200,7 +205,7 @@
                                                         shortConfirmationLabel="GitHub App Name" :confirmWithPassword="false"
                                                         step2ButtonText="Permanently Delete" />
                                                 @else
-                                                    <x-forms.button disabled tooltip="You do not have permission to delete this GitHub App.">
+                                                    <x-forms.button isError disabled tooltip="You do not have permission to delete this GitHub App.">
                                                         Delete
                                                     </x-forms.button>
                                                 @endcan

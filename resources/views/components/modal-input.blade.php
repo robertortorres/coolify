@@ -1,5 +1,6 @@
 @props([
     'title' => 'Are you sure?',
+    'subtitle' => null,
     'buttonTitle' => 'Open Modal',
     'isErrorButton' => false,
     'isHighlightedButton' => false,
@@ -13,6 +14,7 @@
     'wireOpen' => null,
     'contentClicks' => true,
     'isLarge' => false,
+    'fixedHeight' => false,
 ])
 
 <div x-data="{ modalOpen: @if ($wireOpen) $wire.entangle(@js($wireOpen)) @else false @endif }"
@@ -38,7 +40,7 @@
     <template x-teleport="body">
         <div x-show="modalOpen"
             x-init="$watch('modalOpen', value => { if(value) { $nextTick(() => { const firstInput = $el.querySelector('input, textarea, select'); firstInput?.focus(); }) } })"
-            class="fixed inset-0 z-99 overflow-y-auto">
+            class="fixed inset-0 z-99 overflow-hidden">
             <div x-show="modalOpen" x-transition:enter="transition-opacity ease-out duration-200" x-transition:enter-start="opacity-0"
                 x-transition:enter-end="opacity-100" x-transition:leave="transition-opacity ease-in duration-150"
                 x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
@@ -55,10 +57,23 @@
                         'application-settings-form application-settings-section relative flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden',
                         'lg:w-[95vw]! lg:max-w-7xl!' => $isLarge,
                         'lg:w-auto lg:min-w-2xl lg:max-w-4xl' => ! $isLarge,
+                        'sm:h-[40rem]' => $fixedHeight,
                     ])
                     style="box-shadow: 0 0 0 1px var(--coollabs-hairline), var(--shadow-modal)">
                     <header class="flex-wrap! sm:flex-nowrap!">
-                        <h3 class="min-w-0 flex-1 truncate">{{ $title }}</h3>
+                        <div class="min-w-0 flex-1 py-0.5">
+                            @if ($subtitle)
+                                <h3>
+                                    <x-helper :helper="$subtitle" :label="'More information about '.$title">
+                                        <x-slot:trigger>
+                                            <span class="underline underline-offset-4">{{ $title }}</span>
+                                        </x-slot:trigger>
+                                    </x-helper>
+                                </h3>
+                            @else
+                                <h3 class="truncate">{{ $title }}</h3>
+                            @endif
+                        </div>
                         @isset($headerActions)
                             <div class="order-3 w-full sm:order-none sm:w-auto flex shrink-0 items-center gap-2">
                                 {{ $headerActions }}
@@ -76,6 +91,12 @@
                         style="-webkit-overflow-scrolling: touch;">
                         {{ $slot }}
                     </div>
+                    @isset($footer)
+                        <footer
+                            class="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-neutral-200 px-4 py-3 dark:border-white/[0.08]">
+                            {{ $footer }}
+                        </footer>
+                    @endisset
                 </div>
             </div>
         </div>

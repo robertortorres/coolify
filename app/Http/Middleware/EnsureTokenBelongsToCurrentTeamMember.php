@@ -8,11 +8,19 @@ use Symfony\Component\HttpFoundation\Response;
 
 class EnsureTokenBelongsToCurrentTeamMember
 {
+    private const MEMBER_DISALLOWED_ABILITIES = [
+        'root',
+        'write',
+        'write:sensitive',
+        'deploy',
+        'read:sensitive',
+    ];
+
     public function handle(Request $request, Closure $next): Response
     {
         $user = $request->user();
         $token = $user?->currentAccessToken();
-        $teamId = $token?->team_id;
+        $teamId = data_get($token, 'team_id');
 
         if (! $user || ! $token || is_null($teamId)) {
             return response()->json(['message' => 'Invalid token.'], 401);
@@ -27,16 +35,13 @@ class EnsureTokenBelongsToCurrentTeamMember
         }
 
         $role = $team->pivot?->role;
-        // Match ApiAbility::MEMBER_DISALLOWED_ABILITIES — members are read-only.
-        $elevated = $token->can('root')
-            || $token->can('write')
-            || $token->can('write:sensitive')
-            || $token->can('deploy')
-            || $token->can('read:sensitive');
+        $disallowed = array_values(array_filter(
+            self::MEMBER_DISALLOWED_ABILITIES,
+            fn (string $ability): bool => $token->can($ability)
+        ));
 
-        if ($elevated && ! in_array($role, ['admin', 'owner'], true)) {
+        if ($disallowed !== [] && ! in_array($role, ['admin', 'owner'], true)) {
             // MCP clients expect JSON-RPC envelopes (often only parsed on HTTP 200).
-            // Keep REST API clients on plain 403 JSON.
             if ($request->is('mcp') || $request->is('mcp/*')) {
                 return response()->json([
                     'jsonrpc' => '2.0',
@@ -48,7 +53,9 @@ class EnsureTokenBelongsToCurrentTeamMember
                 ]);
             }
 
-            return response()->json(['message' => 'Missing required team role.'], 403);
+            return response()->json([
+                'message' => 'This API token has permissions ('.implode(', ', $disallowed).') that exceed your current role as a team member. Members are restricted to read-only API access. Please revoke this token and create a new one with only read permissions.',
+            ], 403);
         }
 
         return $next($request);

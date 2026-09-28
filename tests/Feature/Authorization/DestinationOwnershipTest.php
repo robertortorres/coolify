@@ -51,10 +51,10 @@ test('team member can view their own destination', function () {
         ->assertSet('name', $this->destination->name);
 });
 
-test('cross-team user cannot view destination', function () {
+test('cross-team user is redirected away from destination', function () {
     $this->actingAs($this->userB);
     session(['currentTeam' => $this->teamB]);
 
     Livewire::test(Show::class, ['destination_uuid' => $this->destination->uuid])
-        ->assertStatus(403);
+        ->assertRedirect(route('destination.index'));
 });

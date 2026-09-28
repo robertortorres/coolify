@@ -22,7 +22,19 @@ class OauthController extends Controller
         try {
             $oauthSetting = $this->enabledProvider($provider);
             $oauthUser = get_socialite_provider($oauthSetting->provider)->user();
-            $oauthLoginService->login($oauthSetting->provider, $oauthUser, $oauthSetting);
+            $user = $oauthLoginService->login(
+                $oauthSetting->provider,
+                $oauthUser,
+                $oauthSetting
+            );
+
+            $team = $user->resolveStoredTeam();
+            if (! $team && $user->teams()->count() === 0) {
+                $team = $user->recreate_personal_team();
+            }
+            if ($team) {
+                session(['currentTeam' => $user->currentTeam = $team]);
+            }
 
             return redirect('/');
         } catch (\Exception $e) {

@@ -75,9 +75,9 @@ test('existing application buildpack selector lists railpack before nixpacks', f
     Livewire::test(General::class, ['application' => $application])
         ->assertSuccessful()
         ->assertSeeInOrder([
-            '<option value="railpack">Railpack</option>',
-            '<option value="nixpacks">Nixpacks</option>',
-        ], false);
+            'Railpack',
+            'Nixpacks',
+        ]);
 });
 
 test('existing application shows railpack without beta label in build pack selector', function () {

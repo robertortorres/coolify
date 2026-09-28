@@ -12,6 +12,8 @@ it('provides grid and table views for compose resources without sorting controls
         ->toContain('aria-label="Grid view"')
         ->toContain('mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between')
         ->toContain('flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-start')
+        ->toContain('class="view-toggle"')
+        ->not->toContain('flex h-9 items-center rounded-lg border border-neutral-200 bg-white')
         ->toContain("localStorage.setItem('service-compose-resources-view', mode)")
         ->not->toContain('>Sort</button>')
         ->and($resourceCard)
@@ -23,7 +25,7 @@ it('directs compose application domain management to the parent service', functi
     $resourceSettings = file_get_contents(resource_path('views/livewire/project/service/index.blade.php'));
 
     expect($resourceSettings)
-        ->toContain('Manage domains, DNS checks, and redirects on the parent service')
+        ->toContain('data-domain-summary')
         ->toContain("route('project.service.domains', \$parameters)")
         ->toContain('Manage domains')
         ->not->toContain('<x-forms.domain-chips model="fqdn" label="Domains"');
@@ -32,11 +34,11 @@ it('directs compose application domain management to the parent service', functi
 it('aligns compose resource columns and uses icon actions', function () {
     $configuration = file_get_contents(resource_path('views/livewire/project/service/configuration.blade.php'));
     $resourceCard = file_get_contents(resource_path('views/livewire/project/service/resource-card.blade.php'));
-    $columns = 'sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_8rem_5rem]';
+    $columns = 'grid-cols-[minmax(14rem,1fr)_minmax(12rem,1fr)_12rem_5rem]';
 
     expect($configuration)->toContain($columns)
         ->and($resourceCard)->toContain($columns)
-        ->toContain('flex flex-wrap items-center justify-end gap-1 sm:contents')
+        ->toContain('@click="modalOpen = true"')
         ->toContain('aria-label="Resource settings"')
         ->toContain('aria-label="Service backups"')
         ->toContain("route('project.service.volume-backups.index', \$parameters)")

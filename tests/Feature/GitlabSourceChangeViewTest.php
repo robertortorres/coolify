@@ -38,14 +38,13 @@ beforeEach(function () {
 });
 
 describe('GitLab source setup view', function () {
-    test('shows red incomplete-setup alert and keeps advanced fields collapsed', function () {
+    test('shows the guided OAuth setup and credential fields', function () {
         Livewire::withQueryParams(['gitlab_app_uuid' => $this->gitlabApp->uuid])
             ->test(Change::class)
-            ->assertSee('You must complete this step before you can use this source!')
-            ->assertSeeHtml('alert-error')
-            ->assertSee('Advanced / Self-hosted')
+            ->assertSee('Step 1 · Create an OAuth application')
+            ->assertSee('Step 2 · Enter credentials')
             ->assertSee('Application ID')
-            ->assertSee('Application Secret')
+            ->assertSee('Application secret')
             ->assertSee('Save')
             ->assertDontSee('alert-warning');
     });
@@ -55,6 +54,23 @@ describe('GitLab source setup view', function () {
             ->test(Change::class)
             ->set('htmlUrl', 'https://gitlab.example.com')
             ->assertSet('apiUrl', 'https://gitlab.example.com/api/v4');
+    });
+
+    test('redirects without rendering an error after the gitlab app is deleted', function () {
+        Livewire::withQueryParams(['gitlab_app_uuid' => $this->gitlabApp->uuid])
+            ->test(Change::class)
+            ->call('delete')
+            ->assertRedirect(route('source.all'));
+
+        $this->assertModelMissing($this->gitlabApp);
+    });
+
+    test('uses the persisted name for the title during a post-delete update', function () {
+        $view = file_get_contents(resource_path('views/livewire/source/gitlab/change.blade.php'));
+
+        expect($view)
+            ->toContain("{{ \$name ?: 'GitLab App' }} | Sources | Coolify")
+            ->not->toContain("{{ \$gitlab_app->name ?: 'GitLab App' }} | Sources | Coolify");
     });
 
     test('saves and reloads the application secret after refresh', function () {
@@ -77,7 +93,7 @@ describe('GitLab source setup view', function () {
     test('supports github-style custom public endpoint for oauth redirect uri', function () {
         Livewire::withQueryParams(['gitlab_app_uuid' => $this->gitlabApp->uuid])
             ->test(Change::class)
-            ->assertSee('Use custom webhook endpoint')
+            ->assertSee('Use a custom endpoint')
             ->assertSee('Selected endpoint')
             ->set('use_custom_webhook_endpoint', true)
             ->set('custom_webhook_endpoint', 'http://100.75.155.70:8000')

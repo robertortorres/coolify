@@ -19,7 +19,7 @@ use Livewire\Livewire;
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    InstanceSettings::updateOrCreate(['id' => 0]);
+    InstanceSettings::forceCreate(['id' => 0]);
 
     $this->team = Team::factory()->create();
 
@@ -142,20 +142,40 @@ test('member cannot call stop on application', function () {
         ->assertDispatched('error');
 });
 
-test('member does not see terminal link for application', function () {
+test('member does not see terminal link in application sidebar', function () {
     $this->actingAs($this->member);
     session(['currentTeam' => $this->team]);
 
-    Livewire::test(ApplicationHeading::class, ['application' => $this->application])
-        ->assertDontSee('Terminal');
+    $terminalUrl = route('project.application.command', [
+        'project_uuid' => $this->project->uuid,
+        'environment_uuid' => $this->environment->uuid,
+        'application_uuid' => $this->application->uuid,
+    ]);
+
+    $html = view('components.application.configuration-sidebar', [
+        'application' => $this->application,
+        'currentRoute' => 'project.application.configuration',
+    ])->render();
+
+    expect($html)->not->toContain($terminalUrl);
 });
 
-test('admin sees terminal link for application', function () {
+test('admin sees terminal link in application sidebar', function () {
     $this->actingAs($this->admin);
     session(['currentTeam' => $this->team]);
 
-    Livewire::test(ApplicationHeading::class, ['application' => $this->application])
-        ->assertSee('Terminal');
+    $terminalUrl = route('project.application.command', [
+        'project_uuid' => $this->project->uuid,
+        'environment_uuid' => $this->environment->uuid,
+        'application_uuid' => $this->application->uuid,
+    ]);
+
+    $html = view('components.application.configuration-sidebar', [
+        'application' => $this->application,
+        'currentRoute' => 'project.application.configuration',
+    ])->render();
+
+    expect($html)->toContain($terminalUrl);
 });
 
 // --- Database Heading (via page route for rendering, policy checks for actions) ---
@@ -223,26 +243,36 @@ test('member cannot call stop on service', function () {
         ->assertDispatched('error');
 });
 
-test('member does not see terminal link for service', function () {
+test('member does not see terminal link in service sidebar', function () {
     $this->actingAs($this->member);
     session(['currentTeam' => $this->team]);
 
-    Livewire::test(ServiceHeading::class, [
+    $terminalUrl = route(
+        'project.service.command',
+        $this->serviceParams,
+    );
+
+    $html = view('components.service.configuration-sidebar', [
         'service' => $this->service,
-        'parameters' => $this->serviceParams,
-        'query' => [],
-    ])
-        ->assertDontSee('Terminal');
+        'currentRoute' => 'project.service.configuration',
+    ])->render();
+
+    expect($html)->not->toContain($terminalUrl);
 });
 
-test('admin sees terminal link for service', function () {
+test('admin sees terminal link in service sidebar', function () {
     $this->actingAs($this->admin);
     session(['currentTeam' => $this->team]);
 
-    Livewire::test(ServiceHeading::class, [
+    $terminalUrl = route(
+        'project.service.command',
+        $this->serviceParams,
+    );
+
+    $html = view('components.service.configuration-sidebar', [
         'service' => $this->service,
-        'parameters' => $this->serviceParams,
-        'query' => [],
-    ])
-        ->assertSee('Terminal');
+        'currentRoute' => 'project.service.configuration',
+    ])->render();
+
+    expect($html)->toContain($terminalUrl);
 });

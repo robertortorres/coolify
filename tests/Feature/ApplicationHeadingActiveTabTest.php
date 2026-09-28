@@ -178,7 +178,7 @@ it('refreshes the breadcrumb application status after it changes', function () {
 
     $component
         ->call('refreshStatus')
-        ->assertSee('Stopped')
+        ->assertSee('Exited')
         ->assertDontSee('Running');
 
     expect($component->instance()->getListeners())

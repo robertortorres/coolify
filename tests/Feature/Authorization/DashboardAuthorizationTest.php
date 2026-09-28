@@ -2,7 +2,6 @@
 
 use App\Livewire\Dashboard;
 use App\Models\Project;
-use App\Models\Server;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -22,29 +21,24 @@ function setupDashboardUser(string $role): array
     return [$user, $team];
 }
 
-function createProjectForTeam(Team $team): void
+function createProjectForTeam(Team $team): Project
 {
-    Project::create([
+    return Project::create([
         'uuid' => (string) Str::uuid(),
         'name' => 'Test Project',
         'team_id' => $team->id,
     ]);
 }
 
-function createServerWithKeyForTeam(Team $team): void
+function createPrivateKeyForTeam(Team $team): void
 {
-    $keyId = DB::table('private_keys')->insertGetId([
+    DB::table('private_keys')->insert([
         'uuid' => (string) Str::uuid(),
         'name' => 'Test Key',
         'private_key' => 'test-key',
         'team_id' => $team->id,
         'created_at' => now(),
         'updated_at' => now(),
-    ]);
-
-    Server::factory()->create([
-        'team_id' => $team->id,
-        'private_key_id' => $keyId,
     ]);
 }
 
@@ -54,10 +48,15 @@ test('admin sees add project button on dashboard', function () {
     $this->actingAs($user);
     session(['currentTeam' => $team]);
 
-    createProjectForTeam($team);
+    $project = createProjectForTeam($team);
+    $environment = $project->environments()->firstOrFail();
+    $createResourceUrl = route('project.resource.create', [
+        'project_uuid' => $project->uuid,
+        'environment_uuid' => $environment->uuid,
+    ]);
 
     Livewire::test(Dashboard::class)
-        ->assertSee('New Project');
+        ->assertSee($createResourceUrl, false);
 });
 
 test('member does not see add project button on dashboard', function () {
@@ -66,10 +65,15 @@ test('member does not see add project button on dashboard', function () {
     $this->actingAs($user);
     session(['currentTeam' => $team]);
 
-    createProjectForTeam($team);
+    $project = createProjectForTeam($team);
+    $environment = $project->environments()->firstOrFail();
+    $createResourceUrl = route('project.resource.create', [
+        'project_uuid' => $project->uuid,
+        'environment_uuid' => $environment->uuid,
+    ]);
 
     Livewire::test(Dashboard::class)
-        ->assertDontSee('New Project');
+        ->assertDontSee($createResourceUrl, false);
 });
 
 test('admin sees add server button on dashboard', function () {
@@ -78,7 +82,7 @@ test('admin sees add server button on dashboard', function () {
     $this->actingAs($user);
     session(['currentTeam' => $team]);
 
-    createServerWithKeyForTeam($team);
+    createPrivateKeyForTeam($team);
 
     Livewire::test(Dashboard::class)
         ->assertSee(route('server.create'));
@@ -90,7 +94,7 @@ test('member does not see add server button on dashboard', function () {
     $this->actingAs($user);
     session(['currentTeam' => $team]);
 
-    createServerWithKeyForTeam($team);
+    createPrivateKeyForTeam($team);
 
     Livewire::test(Dashboard::class)
         ->assertDontSee(route('server.create'));

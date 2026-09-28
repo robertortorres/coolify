@@ -35,34 +35,22 @@ it('uses a single unified navbar for application, service, database, and server 
 
 it('uses interactive status summaries in mobile resource headings', function () {
     $headings = [
-        resource_path('views/livewire/project/application/heading.blade.php') => [
-            'flex w-full min-w-0 items-center gap-3',
-            'min-w-0 flex-1 truncate',
-            '<x-status-summary :status="$application->status" align="right" />',
-        ],
-        resource_path('views/livewire/project/database/heading.blade.php') => [
-            'flex min-w-0 flex-col items-start gap-2',
-            'min-w-0 max-w-full truncate',
-            '<x-status-summary :status="$database->status" title="Database status" />',
-        ],
-        resource_path('views/livewire/project/service/heading.blade.php') => [
-            'flex min-w-0 flex-col items-start gap-2',
-            'min-w-0 max-w-full truncate',
-            '<x-status-summary :status="$displayStatus"',
-        ],
+        resource_path('views/livewire/project/application/heading.blade.php'),
+        resource_path('views/livewire/project/database/heading.blade.php'),
+        resource_path('views/livewire/project/service/heading.blade.php'),
     ];
 
-    foreach ($headings as $path => $expectedFragments) {
+    foreach ($headings as $path) {
         $mobileHeading = str(file_get_contents($path))
             ->after('<div class="mb-3 w-full xl:hidden">')
             ->before('<div class="w-full xl:hidden">')
             ->toString();
 
-        expect($mobileHeading)->not->toContain('<x-status-badge');
-
-        foreach ($expectedFragments as $expectedFragment) {
-            expect($mobileHeading)->toContain($expectedFragment);
-        }
+        expect($mobileHeading)
+            ->toContain('flex min-w-0 flex-col items-start gap-2')
+            ->toContain('min-w-0 max-w-full truncate')
+            ->toContain('<x-status-summary')
+            ->not->toContain('<x-status-badge');
     }
 });
 
@@ -539,16 +527,24 @@ it('welds the deployment log sidebar to the main sidebar', function () {
         ->and($css)->toContain('position: fixed;');
 });
 
-it('uses the updated settings workspace spacing on configuration and deployment pages', function () {
-    $configuration = file_get_contents(resource_path('views/livewire/project/application/configuration.blade.php'));
-    $deploymentIndex = file_get_contents(resource_path('views/livewire/project/application/deployment/index.blade.php'));
-    $deploymentShow = file_get_contents(resource_path('views/livewire/project/application/deployment/show.blade.php'));
+it('uses the same mobile heading gap on application pages', function () {
+    $views = [
+        resource_path('views/livewire/project/application/configuration.blade.php'),
+        resource_path('views/livewire/project/application/backup/index.blade.php'),
+        resource_path('views/livewire/project/application/backup/show.blade.php'),
+        resource_path('views/livewire/project/application/deployment/show.blade.php'),
+        resource_path('views/livewire/project/shared/logs.blade.php'),
+        resource_path('views/livewire/project/shared/execute-container-command.blade.php'),
+    ];
 
-    expect($configuration)->toContain('application-settings-workspace w-full max-w-none')
-        ->and($configuration)->not->toContain('application-settings-workspace mt-4')
-        ->and($deploymentIndex)->toContain("'mt-4 max-w-none lg:mt-0' => ! \$embedded")
-        ->and($deploymentShow)->toContain('application-settings-workspace mt-4')
-        ->and($deploymentShow)->toContain('lg:mt-0');
+    foreach ($views as $view) {
+        expect(file_get_contents($view))
+            ->toContain('application-settings-workspace mt-4')
+            ->toContain('lg:mt-0');
+    }
+
+    expect(file_get_contents(resource_path('views/livewire/project/application/deployment/index.blade.php')))
+        ->toContain("'mt-4 max-w-none lg:mt-0' => ! \$embedded");
 });
 
 it('removes desktop top spacing from the deployment log viewer', function () {
@@ -667,7 +663,7 @@ it('shows application Links as a compact badge beside the mobile status', functi
     expect($mobileApplicationTitle)
         ->toContain('<x-status-summary')
         ->toContain('<x-applications.links')
-        ->toContain('flex w-full min-w-0 items-center gap-3')
+        ->toContain('relative flex w-full min-w-0 items-center gap-2')
         ->toContain('compact')
         ->not->toContain('full-width');
 

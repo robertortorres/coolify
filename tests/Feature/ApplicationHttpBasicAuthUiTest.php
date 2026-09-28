@@ -86,11 +86,17 @@ test('http basic auth credentials can be saved through the general form', functi
         'http_basic_auth_password' => 'old-pass',
     ]);
 
-    Livewire::test(General::class, ['application' => $application])
+    $component = Livewire::test(General::class, ['application' => $application])
         ->set('httpBasicAuthUsername', 'new-user')
         ->set('httpBasicAuthPassword', 'new-pass')
+        ->assertSet('httpBasicAuthUsername', 'new-user')
+        ->assertSet('httpBasicAuthPassword', 'new-pass');
+
+    $component
         ->call('submit')
-        ->assertHasNoErrors();
+        ->assertHasNoErrors()
+        ->assertSet('httpBasicAuthUsername', 'new-user')
+        ->assertSet('httpBasicAuthPassword', 'new-pass');
 
     $application->refresh();
 

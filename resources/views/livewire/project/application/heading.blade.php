@@ -26,12 +26,11 @@
     @endphp
     <div>
         <div class="mb-3 w-full xl:hidden">
-            {{-- Identity row: name truncates, status + links stay pinned right. --}}
-            <div class="flex w-full min-w-0 items-center gap-3">
-                <h1 class="min-w-0 flex-1 truncate text-[22px]! leading-7! font-semibold! tracking-tight! text-black dark:text-fg">
+            <div class="flex min-w-0 flex-col items-start gap-2">
+                <h1 class="min-w-0 max-w-full truncate text-[24px]! leading-7! font-semibold! tracking-tight! text-black dark:text-fg">
                     {{ $application->name }}
                 </h1>
-                <div class="flex shrink-0 items-center gap-2">
+                <div class="relative flex w-full min-w-0 items-center gap-2">
                     <x-status-summary :status="$application->status" align="right" />
                     <x-applications.links :application="$application" compact />
                 </div>
@@ -139,7 +138,18 @@
                     @if ($application->build_pack === 'dockercompose' && is_null($application->docker_compose_raw))
                         <span class="px-2 text-[13px] text-neutral-500 dark:text-fg-dim">Load a Compose file to deploy.</span>
                     @else
-                        <div class="resource-heading-menus shrink-0">
+                        <div class="resource-heading-menus flex shrink-0 items-center gap-0.5">
+                            @foreach ($applicationMenuItems as $item)
+                                <a href="{{ route($item['route'], $parameters) }}"
+                                    @class([
+                                        'app-tab shrink-0',
+                                        'app-tab-active' => $item['active'],
+                                    ])
+                                    @if ($item['active']) aria-current="page" @endif
+                                    {{ wireNavigate() }}>
+                                    {{ $item['label'] }}
+                                </a>
+                            @endforeach
                             <x-applications.links :application="$application" />
                         </div>
                         @can('deploy', $application)

@@ -3,7 +3,9 @@
 use App\Livewire\Project\Application\General;
 use App\Models\Application;
 use App\Models\Environment;
+use App\Models\InstanceSettings;
 use App\Models\Project;
+use App\Models\Server;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -11,7 +13,38 @@ use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
 
+class GeneralWithoutBuildpackCleanupSubmitSideEffects extends General
+{
+    public function render(): mixed
+    {
+        return view('livewire.project.application.general');
+    }
+
+    public function submit($showToaster = true): void
+    {
+        $this->application->save();
+    }
+}
+
+function buildpackSwitchApplicationAttributes($test): array
+{
+    return [
+        'name' => 'buildpack-switch-test',
+        'environment_id' => $test->environment->id,
+        'destination_id' => $test->destination->id,
+        'destination_type' => $test->destination->getMorphClass(),
+        'static_image' => 'nginx:alpine',
+        'base_directory' => '/',
+        'is_http_basic_auth_enabled' => false,
+        'redirect' => 'both',
+    ];
+}
+
 beforeEach(function () {
+    InstanceSettings::unguarded(
+        fn () => InstanceSettings::query()->firstOrCreate(['id' => 0])
+    );
+
     // Create a team with owner
     $this->team = Team::factory()->create();
     $this->user = User::factory()->create();
@@ -24,13 +57,15 @@ beforeEach(function () {
     // Create project and environment
     $this->project = Project::factory()->create(['team_id' => $this->team->id]);
     $this->environment = Environment::factory()->create(['project_id' => $this->project->id]);
+    $this->server = Server::factory()->create(['team_id' => $this->team->id]);
+    $this->destination = $this->server->standaloneDockers()->firstOrFail();
 });
 
 describe('Buildpack Switching Cleanup', function () {
     test('clears dockerfile fields when switching from dockerfile to nixpacks', function () {
         // Create an application with dockerfile buildpack and dockerfile content
         $application = Application::factory()->create([
-            'environment_id' => $this->environment->id,
+            ...buildpackSwitchApplicationAttributes($this),
             'build_pack' => 'dockerfile',
             'dockerfile' => 'FROM node:18\nHEALTHCHECK CMD curl -f http://localhost/ || exit 1',
             'dockerfile_location' => '/Dockerfile',
@@ -39,10 +74,10 @@ describe('Buildpack Switching Cleanup', function () {
         ]);
 
         // Switch to nixpacks buildpack
-        Livewire::test(General::class, ['application' => $application])
+        Livewire::test(GeneralWithoutBuildpackCleanupSubmitSideEffects::class, ['application' => $application])
             ->assertSuccessful()
             ->set('buildPack', 'nixpacks')
-            ->call('updatedBuildPack');
+            ->assertHasNoErrors();
 
         // Verify dockerfile fields were cleared
         $application->refresh();
@@ -55,7 +90,7 @@ describe('Buildpack Switching Cleanup', function () {
 
     test('clears dockerfile fields when switching from dockerfile to static', function () {
         $application = Application::factory()->create([
-            'environment_id' => $this->environment->id,
+            ...buildpackSwitchApplicationAttributes($this),
             'build_pack' => 'dockerfile',
             'dockerfile' => 'FROM nginx:alpine',
             'dockerfile_location' => '/custom.Dockerfile',
@@ -63,10 +98,10 @@ describe('Buildpack Switching Cleanup', function () {
             'custom_healthcheck_found' => true,
         ]);
 
-        Livewire::test(General::class, ['application' => $application])
+        Livewire::test(GeneralWithoutBuildpackCleanupSubmitSideEffects::class, ['application' => $application])
             ->assertSuccessful()
             ->set('buildPack', 'static')
-            ->call('updatedBuildPack');
+            ->assertHasNoErrors();
 
         $application->refresh();
         expect($application->build_pack)->toBe('static');
@@ -78,15 +113,15 @@ describe('Buildpack Switching Cleanup', function () {
 
     test('does not clear dockerfile fields when switching to dockerfile', function () {
         $application = Application::factory()->create([
-            'environment_id' => $this->environment->id,
+            ...buildpackSwitchApplicationAttributes($this),
             'build_pack' => 'nixpacks',
             'dockerfile' => null,
         ]);
 
-        Livewire::test(General::class, ['application' => $application])
+        Livewire::test(GeneralWithoutBuildpackCleanupSubmitSideEffects::class, ['application' => $application])
             ->assertSuccessful()
             ->set('buildPack', 'dockerfile')
-            ->call('updatedBuildPack');
+            ->assertHasNoErrors();
 
         // When switching TO dockerfile, fields remain as they were
         $application->refresh();
@@ -95,16 +130,16 @@ describe('Buildpack Switching Cleanup', function () {
 
     test('does not affect fields when switching between non-dockerfile buildpacks', function () {
         $application = Application::factory()->create([
-            'environment_id' => $this->environment->id,
+            ...buildpackSwitchApplicationAttributes($this),
             'build_pack' => 'nixpacks',
             'dockerfile' => null,
             'dockerfile_location' => null,
         ]);
 
-        Livewire::test(General::class, ['application' => $application])
+        Livewire::test(GeneralWithoutBuildpackCleanupSubmitSideEffects::class, ['application' => $application])
             ->assertSuccessful()
             ->set('buildPack', 'static')
-            ->call('updatedBuildPack');
+            ->assertHasNoErrors();
 
         $application->refresh();
         expect($application->build_pack)->toBe('static');
@@ -113,7 +148,7 @@ describe('Buildpack Switching Cleanup', function () {
 
     test('clears dockerfile fields when switching from dockerfile to railpack', function () {
         $application = Application::factory()->create([
-            'environment_id' => $this->environment->id,
+            ...buildpackSwitchApplicationAttributes($this),
             'build_pack' => 'dockerfile',
             'dockerfile' => 'FROM node:18',
             'dockerfile_location' => '/Dockerfile',
@@ -121,10 +156,10 @@ describe('Buildpack Switching Cleanup', function () {
             'custom_healthcheck_found' => true,
         ]);
 
-        Livewire::test(General::class, ['application' => $application])
+        Livewire::test(GeneralWithoutBuildpackCleanupSubmitSideEffects::class, ['application' => $application])
             ->assertSuccessful()
             ->set('buildPack', 'railpack')
-            ->call('updatedBuildPack');
+            ->assertHasNoErrors();
 
         $application->refresh();
         expect($application->build_pack)->toBe('railpack');
@@ -136,17 +171,17 @@ describe('Buildpack Switching Cleanup', function () {
 
     test('clears dockerfile fields when switching from dockerfile to dockercompose', function () {
         $application = Application::factory()->create([
-            'environment_id' => $this->environment->id,
+            ...buildpackSwitchApplicationAttributes($this),
             'build_pack' => 'dockerfile',
             'dockerfile' => 'FROM alpine:latest',
             'dockerfile_location' => '/docker/Dockerfile',
             'custom_healthcheck_found' => true,
         ]);
 
-        Livewire::test(General::class, ['application' => $application])
+        Livewire::test(GeneralWithoutBuildpackCleanupSubmitSideEffects::class, ['application' => $application])
             ->assertSuccessful()
             ->set('buildPack', 'dockercompose')
-            ->call('updatedBuildPack');
+            ->assertHasNoErrors();
 
         $application->refresh();
         expect($application->build_pack)->toBe('dockercompose');

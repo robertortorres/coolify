@@ -8,6 +8,8 @@ use App\Livewire\Project\DeleteProject;
 use App\Models\Application;
 use App\Models\ApplicationDeploymentQueue;
 use App\Models\Environment;
+use App\Models\InstanceSettings;
+use App\Models\PrivateKey;
 use App\Models\Project;
 use App\Models\Server;
 use App\Models\StandaloneDocker;
@@ -15,17 +17,54 @@ use App\Models\Team;
 use App\Models\User;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
+    Server::flushIdentityMap();
+    Process::fake();
+    Queue::fake();
+    Storage::fake('ssh-keys');
+
+    config([
+        'constants.ssh.mux_enabled' => false,
+        'cache.default' => 'array',
+        'session.driver' => 'array',
+        'queue.default' => 'sync',
+        'app.maintenance.driver' => 'file',
+    ]);
+
+    InstanceSettings::forceCreate([
+        'id' => 0,
+        'is_api_enabled' => true,
+    ]);
+
     // Attacker: Team A
     $this->userA = User::factory()->create();
     $this->teamA = Team::factory()->create();
     $this->userA->teams()->attach($this->teamA, ['role' => 'owner']);
 
-    $this->serverA = Server::factory()->create(['team_id' => $this->teamA->id]);
+    session(['currentTeam' => $this->teamA]);
+
+    // Match the canonical API cancellation test lifecycle:
+    // create the token immediately after establishing the current team.
+    $this->tokenA = $this->userA->createToken('test-token', ['*']);
+    $this->bearerTokenA = $this->tokenA->plainTextToken;
+
+    $this->privateKeyA = PrivateKey::factory()->create([
+        'team_id' => $this->teamA->id,
+    ]);
+    $this->serverA = Server::factory()->create([
+        'team_id' => $this->teamA->id,
+        'private_key_id' => $this->privateKeyA->id,
+    ]);
+    $this->destinationA = StandaloneDocker::query()
+        ->where('server_id', $this->serverA->id)
+        ->firstOrFail();
     $this->projectA = Project::factory()->create(['team_id' => $this->teamA->id]);
     $this->environmentA = Environment::factory()->create(['project_id' => $this->projectA->id]);
 
@@ -86,7 +125,10 @@ describe('Boarding Project IDOR', function () {
     });
 
     test('boarding selectExistingProject can load own team project', function () {
-        $component = Livewire::test(BoardingIndex::class)
+        $component = Livewire::test(BoardingIndex::class, [
+            'selectedServerType' => 'remote',
+            'selectedExistingServer' => $this->serverA->id,
+        ])
             ->set('selectedProject', $this->projectA->id)
             ->call('selectExistingProject');
 
@@ -154,8 +196,8 @@ describe('DeployController API Server IDOR', function () {
         // Create a deployment queue entry that references Team B's server as build_server
         $application = Application::factory()->create([
             'environment_id' => $this->environmentA->id,
-            'destination_id' => StandaloneDocker::factory()->create(['server_id' => $this->serverA->id])->id,
-            'destination_type' => StandaloneDocker::class,
+            'destination_id' => $this->destinationA->id,
+            'destination_type' => $this->destinationA->getMorphClass(),
         ]);
 
         $deployment = ApplicationDeploymentQueue::create([
@@ -166,11 +208,15 @@ describe('DeployController API Server IDOR', function () {
             'status' => ApplicationDeploymentStatus::IN_PROGRESS->value,
         ]);
 
-        $token = $this->userA->createToken('test-token', ['*']);
+        // This file authenticates as userA globally for the Livewire IDOR tests.
+        // Clear that session guard here so this API request is authenticated
+        // exclusively by the Sanctum bearer token.
+        auth()->logout();
 
         $response = $this->withHeaders([
-            'Authorization' => 'Bearer '.$token->plainTextToken,
-        ])->deleteJson("/api/v1/deployments/{$deployment->deployment_uuid}");
+            'Authorization' => 'Bearer '.$this->bearerTokenA,
+            'Content-Type' => 'application/json',
+        ])->postJson("/api/v1/deployments/{$deployment->deployment_uuid}/cancel");
 
         // The cancellation should proceed but the build_server should NOT be found
         // (team-scoped query returns null for Team B's server)

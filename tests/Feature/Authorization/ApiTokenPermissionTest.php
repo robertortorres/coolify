@@ -8,7 +8,15 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    InstanceSettings::updateOrCreate(['id' => 0], ['is_api_enabled' => true]);
+    InstanceSettings::unguarded(fn () => InstanceSettings::query()->updateOrCreate(
+        ['id' => 0],
+        [
+            'is_api_enabled' => true,
+            'allowed_ips' => '127.0.0.1',
+        ]
+    ));
+
+    expect(InstanceSettings::find(0))->not->toBeNull();
 
     $this->team = Team::factory()->create();
     $this->user = User::factory()->create();

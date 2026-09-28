@@ -16,8 +16,13 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    // ApiAllowed middleware requires InstanceSettings with id=0
-    InstanceSettings::create(['id' => 0, 'is_api_enabled' => true]);
+    // ApiAllowed middleware requires InstanceSettings with id=0.
+    InstanceSettings::unguarded(fn () => InstanceSettings::query()->updateOrCreate(
+        ['id' => 0],
+        ['is_api_enabled' => true],
+    ));
+
+    expect(InstanceSettings::find(0))->not->toBeNull();
 
     $this->team = Team::factory()->create();
     $this->user = User::factory()->create();

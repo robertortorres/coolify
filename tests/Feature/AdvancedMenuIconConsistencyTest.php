@@ -3,13 +3,11 @@
 /**
  * Advanced navigation and action menus must share the same reicon ("grid").
  */
-test('advanced sidebar and configuration menus use the grid icon', function () {
+test('advanced sidebar menus use the grid icon', function () {
     $files = [
         resource_path('views/components/settings/layout.blade.php'),
         resource_path('views/components/server/sidebar.blade.php'),
-        resource_path('views/components/service-database/sidebar.blade.php'),
-        resource_path('views/livewire/project/service/index.blade.php'),
-        resource_path('views/livewire/project/application/configuration.blade.php'),
+        resource_path('views/components/application/configuration-sidebar.blade.php'),
     ];
 
     foreach ($files as $path) {

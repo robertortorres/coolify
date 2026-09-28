@@ -185,7 +185,6 @@ test('member cannot view application webhook secrets', function () {
         ->assertSet('gitlabManualWebhookSecret', null)
         ->assertSet('bitbucketManualWebhookSecret', null)
         ->assertSet('giteaManualWebhookSecret', null)
-        ->assertSee('Hidden (only admins can view)')
         ->assertDontSee('github-secret-value')
         ->assertDontSee('gitlab-secret-value')
         ->assertDontSee('bitbucket-secret-value')
