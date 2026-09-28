@@ -36,19 +36,24 @@ it('shows the two-factor authentication state as a header badge', function () {
 
 it('offers full and centered page width preferences on the profile appearance view', function () {
     $appearanceView = file_get_contents(resource_path('views/livewire/profile/appearance.blade.php'));
+    $themeControls = file_get_contents(resource_path('views/components/theme-controls.blade.php'));
+    $baseLayout = file_get_contents(resource_path('views/layouts/base.blade.php'));
     $appLayout = file_get_contents(resource_path('views/layouts/app.blade.php'));
 
     expect($appearanceView)
         ->not->toContain('<x-profile.navbar />')
+        ->toContain('<x-theme-controls variant="full" />')
+        ->and($themeControls)
         ->toContain('Color theme')
         ->toContain('Page width')
-        ->toContain("pageWidth: localStorage.getItem('pageWidth') || 'full'")
         ->toContain("['value' => 'full'")
         ->toContain("['value' => 'centered'")
         ->toContain("@click=\"setWidth('{{ \$option['value'] }}')\"")
-        ->toContain("localStorage.setItem('pageWidth', width)")
         ->not->toContain('Interface density')
         ->not->toContain('setZoom(')
+        ->and($baseLayout)
+        ->toContain("pageWidth: localStorage.getItem('pageWidth') || 'full'")
+        ->toContain("localStorage.setItem('pageWidth', width)")
         ->and($appLayout)
         ->toContain("pageWidth: localStorage.getItem('pageWidth') || 'full'")
         ->toContain('@page-width-changed.window="pageWidth = $event.detail"')
