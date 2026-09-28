@@ -3,6 +3,7 @@
 use App\Jobs\ServerCheckJob;
 use App\Jobs\ServerManagerJob;
 use App\Jobs\ServerStorageCheckJob;
+use App\Models\InstanceSettings;
 use App\Models\Server;
 use App\Models\Team;
 use Carbon\Carbon;
@@ -12,6 +13,11 @@ use Illuminate\Support\Facades\Queue;
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
+    InstanceSettings::forceCreate([
+        'id' => 0,
+        'instance_timezone' => 'UTC',
+    ]);
+
     Queue::fake();
 });
 
