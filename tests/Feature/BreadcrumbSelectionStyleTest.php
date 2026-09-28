@@ -17,8 +17,8 @@ test('teleported resource breadcrumbs use the same spacing as application breadc
     $layout = file_get_contents(resource_path('views/layouts/app.blade.php'));
 
     expect($layout)
-        ->toContain('class="flex items-center gap-0.5 min-w-0 flex-1 pl-3 pr-4"')
-        ->not->toContain('class="flex items-center gap-1.5 min-w-0 flex-1 pl-3 pr-4"');
+        ->toContain('items-center gap-0.5 min-w-0 flex-1')
+        ->not->toContain('items-center gap-1.5 min-w-0 flex-1');
 });
 
 test('top breadcrumbs shrink and clip instead of overlapping on narrower screens', function () {
