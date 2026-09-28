@@ -4,10 +4,13 @@ use App\Models\Server;
 use App\Models\ServerSetting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
+    Queue::fake();
+
     // Create user (which automatically creates a team)
     $user = User::factory()->create();
     $this->team = $user->teams()->first();
