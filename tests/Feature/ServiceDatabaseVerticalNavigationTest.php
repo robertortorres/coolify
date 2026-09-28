@@ -34,7 +34,7 @@ it('matches application action bar behavior for services and databases', functio
         expect($heading)
             ->toContain('@teleport(\'#resource-action-hud-slot\')')
             ->toContain('xl:w-auto')
-            ->toContain('<x-resource-heading-overflow')
+            ->not->toContain('<x-resource-heading-overflow')
             ->not->toContain('hidden lg:block lg:h-12');
     }
 
@@ -126,7 +126,7 @@ it('combines service database and storage backups in one section', function () {
         ->not->toContain('data-table-header scheduled-backups-table-grid')
         ->not->toContain('>Database backups</h3>')
         ->not->toContain('>Storage backups</h3>')
-        ->toContain("'application-settings-section-body w-full'")
+        ->toContain("'application-settings-section-body relative w-full'")
         ->toContain('class="data-table w-full overflow-x-auto"')
         ->toContain('backup-table-grid service-backup-table-grid')
         ->not->toContain('<span class="text-right">Executions</span>')
@@ -296,8 +296,7 @@ it('offers downloads from the service backup executions list', function () {
     $view = file_get_contents(resource_path('views/livewire/project/service/backup-executions.blade.php'));
 
     expect($component)
-        ->toContain("route('download.backup'")
-        ->toContain("route('download.volume-backup'")
+        ->toContain("route(\$isDatabase ? 'download.backup' : 'download.volume-backup'")
         ->and($view)
         ->toContain('<span class="text-right">Actions</span>')
         ->toContain('aria-label="Download backup"')
