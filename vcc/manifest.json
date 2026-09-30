@@ -7,8 +7,8 @@
   "upstream": {
     "repository": "https://github.com/coollabsio/coolify",
     "branch": "next",
-    "base_commit": "33f453912ad5298620b513269119e404c68f41dc",
-    "synchronized_at": "2026-09-12"
+    "base_commit": "e2e2d4010bcd590084b66d6f748f3eec8e2bbee9",
+    "synchronized_at": "2026-09-30"
   },
   "vcc": {
     "branch": "vcc/main",

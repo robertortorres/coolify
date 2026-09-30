@@ -38,6 +38,8 @@ it('uses the branded input focus state for the server filter', function () {
     expect($navbarView)
         ->toContain('placeholder="Filter servers…"')
         ->toContain('class="input h-7!')
+        ->toContain('M8 9l4-4 4 4M8 15l4 4 4-4')
+        ->not->toContain('<x-reicon name="chevron-down" class="size-3 shrink-0 text-neutral-400 dark:text-fg-faint" />')
         ->toContain('<x-reicon name="check-circle"')
         ->not->toContain('<x-reicon name="check"');
 });
@@ -52,14 +54,14 @@ it('lists desktop proxy controls inline and keeps Traefik and refresh in Advance
         ->toContain('Restart Proxy')
         ->toContain('Stop Proxy')
         ->toContain('Start Proxy')
-        ->toContain('<x-server.advanced')
-        ->not->toContain('Traefik Dashboard')
-        ->not->toContain('Refresh Proxy Status')
+        ->not->toContain('<x-server.advanced')
+        ->toContain('Traefik Dashboard')
+        ->toContain('Refresh Proxy Status')
         ->not->toContain('resource-heading-overflow-separator')
         ->not->toContain('<x-modal-confirmation');
 
-    expect(strpos($desktopActions, '<x-server.advanced'))
-        ->toBeLessThan(strpos($desktopActions, 'id="server-desktop-actions"'));
+    expect($navbar)
+        ->toContain("'server.advanced'");
 
     expect($advanced)
         ->toContain('Advanced')
