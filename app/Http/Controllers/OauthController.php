@@ -36,6 +36,14 @@ class OauthController extends Controller
                 session(['currentTeam' => $user->currentTeam = $team]);
             }
 
+            $team = $user->resolveStoredTeam();
+            if (! $team && $user->teams()->count() === 0) {
+                $team = $user->recreate_personal_team();
+            }
+            if ($team) {
+                session(['currentTeam' => $user->currentTeam = $team]);
+            }
+
             return redirect('/');
         } catch (\Exception $e) {
             $this->logCallbackFailure($provider, $e);
