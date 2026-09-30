@@ -70,7 +70,8 @@ class CancelDeployment extends Tool
 
         try {
             $buildServerId = $deployment->build_server_id ?? $deployment->server_id;
-            $server = Server::whereTeamId($teamId)->find($buildServerId);
+            $server = Server::accessibleDeploymentExecutionServersForTeam($teamId)
+                ->find($buildServerId);
             if ($server) {
                 $deployment->addLogEntry('Deployment cancelled by user via MCP.', 'stderr');
 
