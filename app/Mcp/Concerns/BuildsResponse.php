@@ -121,6 +121,27 @@ trait BuildsResponse
             $text
         ) ?? $text;
 
+        // CLI secret options using a separate argument: --password value / --token value / etc.
+        $text = preg_replace(
+            '/(?<![\w])(--(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|auth[_-]?token))\s+(["\']?)[^\s"\']{3,}\2/i',
+            '$1 '.REDACTED,
+            $text
+        ) ?? $text;
+
+        // HTTP Authorization bearer credentials.
+        $text = preg_replace(
+            '/(?<![\w])(authorization\s*[:=]\s*["\']?bearer)\s+[^\s"\']{3,}["\']?/i',
+            '$1 '.REDACTED,
+            $text
+        ) ?? $text;
+
+        // curl basic-auth credentials: -u user:password / --user user:password.
+        $text = preg_replace(
+            '/(?<![\w])(-u|--user)\s+(["\']?)([^:\s"\']+):[^\s"\']{1,}\2/i',
+            '$1 $2$3:'.REDACTED.'$2',
+            $text
+        ) ?? $text;
+
         // export FOO=bar / "API_KEY":"..." style for sensitive-looking names
         $text = preg_replace(
             '/(?<![\w])(export\s+)?["\']?([A-Z][A-Z0-9_]*(?:SECRET|PASSWORD|TOKEN|PASSWD|API_KEY|PRIVATE_KEY)[A-Z0-9_]*)["\']?\s*[=:]\s*["\']?[^\s"\']{3,}["\']?/i',
