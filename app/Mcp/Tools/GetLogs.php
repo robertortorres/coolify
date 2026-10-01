@@ -81,11 +81,11 @@ class GetLogs extends Tool
             $payload['choices'] = $e->choices;
 
             return $this->mcpSuccess($request, $this->respond($payload), ['resource_uuid' => $uuid, 'outcome' => 'multiple_containers']);
-        } catch (\Throwable $e) {
+        } catch (\Throwable) {
             return $this->mcpSuccess($request, $this->respond(
                 $this->failurePayload(
                     reason: 'log_fetch_failed',
-                    message: $e->getMessage(),
+                    message: 'Unable to fetch container logs.',
                     resourceType: $resourceType,
                     uuid: $uuid,
                     status: $resource->status ?? null,

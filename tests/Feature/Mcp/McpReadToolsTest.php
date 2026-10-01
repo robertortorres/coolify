@@ -889,6 +889,38 @@ test('list_github_repositories rejects public github sources cleanly', function 
         ->not->toContain('private_key');
 });
 
+test('list_github_branches does not expose unexpected exception messages', function () {
+    $publicApp = GithubApp::create([
+        'name' => 'Public Source Exception',
+        'uuid' => 'github-public-exception',
+        'team_id' => $this->team->id,
+        'api_url' => 'https://api.github.com',
+        'html_url' => 'https://github.com',
+        'custom_user' => 'git',
+        'custom_port' => 22,
+        'is_public' => true,
+        'is_system_wide' => false,
+    ]);
+
+    Http::fake(function () {
+        throw new RuntimeException('redactme_exception_github');
+    });
+
+    $response = mcpReadCall('list_github_branches', [
+        'github_app_uuid' => $publicApp->uuid,
+        'owner' => 'coollabsio',
+        'repo' => 'coolify',
+    ]);
+
+    $response->assertOk();
+
+    $message = $response->json('result.content.0.text');
+
+    expect($response->json('result.isError'))->toBeTrue()
+        ->and($message)->toContain('Failed to load branches.')
+        ->and($message)->not->toContain('redactme_exception_github');
+});
+
 test('list_github_branches uses anonymous github api for public sources', function () {
     $publicApp = GithubApp::create([
         'name' => 'Public Source',
@@ -1611,6 +1643,31 @@ test('get_logs returns structured next_tools when application is not running', f
     expect(collect($body['data']['next_tools'])->pluck('tool'))->toContain('list_deployments', 'list_unhealthy_resources');
 });
 
+test('get_logs does not expose unexpected container exception messages', function () {
+    $this->application->update(['status' => 'running:healthy']);
+    $this->server->settings()->update([
+        'is_reachable' => true,
+        'is_usable' => true,
+    ]);
+
+    Process::fake(function () {
+        throw new RuntimeException('redactme_exception_logs');
+    });
+
+    $response = mcpSensitiveReadCall('get_logs', [
+        'resource' => 'application',
+        'uuid' => $this->application->uuid,
+    ]);
+
+    $response->assertOk();
+    $body = mcpReadJson($response);
+
+    expect($body['data']['ok'])->toBeFalse()
+        ->and($body['data']['reason'])->toBe('log_fetch_failed')
+        ->and($body['data']['message'])->toBe('Unable to fetch container logs.')
+        ->and(json_encode($body))->not->toContain('redactme_exception_logs');
+});
+
 test('get_logs returns structured choices when service has multiple containers', function () {
     $this->server->settings()->update(['is_reachable' => true, 'is_usable' => true]);
 
@@ -1734,6 +1791,53 @@ test('team member with deploy ability cannot call lifecycle tools', function () 
     expect($response->json('jsonrpc'))->toBe('2.0');
     expect($response->json('error.message') ?? $response->json('result.content.0.text') ?? '')
         ->toMatch('/team role|Missing required/i');
+});
+
+test('control does not expose unexpected action exception messages', function () {
+    $database = StandalonePostgresql::create([
+        'name' => 'exception-test-db',
+        'postgres_password' => 'password',
+        'environment_id' => $this->environment->id,
+        'destination_id' => $this->destination->id,
+        'destination_type' => $this->destination->getMorphClass(),
+    ]);
+
+    Bus::shouldReceive('dispatch')
+        ->once()
+        ->andThrow(new RuntimeException('redactme_exception_control'));
+
+    $token = $this->user->createToken(
+        'mcp-deploy-exception',
+        ['read', 'deploy']
+    )->plainTextToken;
+
+    auth()->forgetGuards();
+
+    $response = $this->withHeaders([
+        'Content-Type' => 'application/json',
+        'Accept' => 'application/json, text/event-stream',
+        'Authorization' => 'Bearer '.$token,
+    ])->postJson('/mcp', [
+        'jsonrpc' => '2.0',
+        'id' => 1,
+        'method' => 'tools/call',
+        'params' => [
+            'name' => 'control',
+            'arguments' => [
+                'resource' => 'database',
+                'action' => 'start',
+                'uuid' => $database->uuid,
+            ],
+        ],
+    ]);
+
+    $response->assertOk();
+
+    $message = $response->json('result.content.0.text');
+
+    expect($response->json('result.isError'))->toBeTrue()
+        ->and($message)->toContain('Control operation failed.')
+        ->and($message)->not->toContain('redactme_exception_control');
 });
 
 test('control start with deploy ability queues application deployment', function () {

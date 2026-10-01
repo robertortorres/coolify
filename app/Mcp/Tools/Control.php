@@ -68,8 +68,8 @@ class Control extends Tool
                 'database' => $this->controlDatabase($resource, $action),
                 'service' => $this->controlService($resource, $action),
             };
-        } catch (\Throwable $e) {
-            return $this->mcpError($request, $e->getMessage(), ['resource_uuid' => $uuid]);
+        } catch (\Throwable) {
+            return $this->mcpError($request, 'Control operation failed.', ['resource_uuid' => $uuid]);
         }
 
         auditLog('mcp.control', [
