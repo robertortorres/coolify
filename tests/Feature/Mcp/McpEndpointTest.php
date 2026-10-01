@@ -121,6 +121,28 @@ test('MCP endpoint rejects unauthenticated requests', function () {
     $response->assertStatus(401);
 });
 
+test('MCP endpoint rate limits requests per token', function () {
+    $token = $this->user->createToken('mcp-rate-limit', ['read'])->plainTextToken;
+
+    for ($i = 0; $i < 120; $i++) {
+        mcpListTools($token)->assertOk();
+    }
+
+    mcpListTools($token)->assertStatus(429);
+});
+
+test('MCP endpoint rate limit buckets are independent per token', function () {
+    $firstToken = $this->user->createToken('mcp-rate-limit-first', ['read'])->plainTextToken;
+    $secondToken = $this->user->createToken('mcp-rate-limit-second', ['read'])->plainTextToken;
+
+    for ($i = 0; $i < 120; $i++) {
+        mcpListTools($firstToken)->assertOk();
+    }
+
+    mcpListTools($firstToken)->assertStatus(429);
+    mcpListTools($secondToken)->assertOk();
+});
+
 test('MCP endpoint lists tools for an authenticated token', function () {
     $token = $this->user->createToken('mcp-read', ['read'])->plainTextToken;
 
