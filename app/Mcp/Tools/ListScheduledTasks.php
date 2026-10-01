@@ -70,7 +70,10 @@ class ListScheduledTasks extends Tool
                 'command_included' => $includeCommand,
             ];
             if ($includeCommand) {
-                $row['command'] = $task->command;
+                $command = $task->command;
+                $row['command'] = is_string($command)
+                    ? $this->redactLogText($command)
+                    : $command;
             }
 
             return $this->scrubSensitive($row);

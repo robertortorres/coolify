@@ -2389,6 +2389,36 @@ test('list_scheduled_tasks omits command without sensitive read ability', functi
         ->and($sensitiveTasks[0]['command'])->toContain('pg_dump');
 });
 
+test('list_scheduled_tasks redacts secret-like values in commands with sensitive read', function () {
+    ScheduledTask::create([
+        'uuid' => (string) Str::uuid(),
+        'name' => 'secret-command',
+        'command' => 'backup --password=redactme01 API_TOKEN=redactme02',
+        'frequency' => '0 3 * * *',
+        'enabled' => true,
+        'timeout' => 60,
+        'team_id' => $this->team->id,
+        'application_id' => $this->application->id,
+    ]);
+
+    $response = mcpSensitiveReadCall('list_scheduled_tasks', [
+        'resource' => 'application',
+        'uuid' => $this->application->uuid,
+    ]);
+
+    $response->assertOk();
+
+    $body = mcpReadJson($response);
+    $command = collect($body['data']['tasks'])
+        ->firstWhere('name', 'secret-command')['command'] ?? '';
+
+    expect($command)
+        ->toContain('backup')
+        ->not->toContain('redactme01')
+        ->not->toContain('redactme02')
+        ->toContain(REDACTED);
+});
+
 test('list_scheduled_task_executions returns newest first across pages', function () {
     $task = ScheduledTask::create([
         'uuid' => (string) Str::uuid(),
@@ -2517,6 +2547,35 @@ test('get_logs redacts secret-like values in container output', function () {
         ->and($redacted)->not->toContain('redactme02')
         ->and($redacted)->toContain('password=')
         ->and($redacted)->toContain(REDACTED);
+});
+
+test('redactLogText redacts common CLI and authorization secret formats', function () {
+    $trait = new class
+    {
+        use BuildsResponse;
+
+        public function redact(string $text): string
+        {
+            return $this->redactLogText($text);
+        }
+    };
+
+    $cases = [
+        '--password redactme21',
+        '--token redactme22',
+        'Authorization: Bearer redactme23',
+        'authorization="Bearer redactme24"',
+        'curl -u user:redactme25 https://example.invalid',
+        'curl --user user:redactme26 https://example.invalid',
+    ];
+
+    foreach ($cases as $case) {
+        $redacted = $trait->redact($case);
+
+        expect($redacted)
+            ->not->toContain('redactme')
+            ->toContain(REDACTED);
+    }
 });
 
 test('redactLogText redacts JSON secret fields in log lines', function () {
