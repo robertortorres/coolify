@@ -109,8 +109,8 @@ class ListGithubRepositories extends Tool
                 'github_app_uuid' => $appUuid,
                 'repositories' => $summaries,
             ]), ['resource_uuid' => $appUuid]);
-        } catch (\Throwable $e) {
-            return $this->mcpError($request, 'Failed to load repositories: '.$e->getMessage(), ['resource_uuid' => $appUuid]);
+        } catch (\Throwable) {
+            return $this->mcpError($request, 'Failed to load repositories.', ['resource_uuid' => $appUuid]);
         }
     }
 

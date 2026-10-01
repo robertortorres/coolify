@@ -129,8 +129,8 @@ class ListGithubBranches extends Tool
                 'repo' => $repo,
                 'branches' => $summaries,
             ]), ['resource_uuid' => $appUuid]);
-        } catch (\Throwable $e) {
-            return $this->mcpError($request, 'Failed to load branches: '.$e->getMessage(), ['resource_uuid' => $appUuid]);
+        } catch (\Throwable) {
+            return $this->mcpError($request, 'Failed to load branches.', ['resource_uuid' => $appUuid]);
         }
     }
 
