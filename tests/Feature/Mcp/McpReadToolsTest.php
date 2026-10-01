@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\ApplicationDeploymentStatus;
 use App\Jobs\ApplicationDeploymentJob;
 use App\Mcp\Concerns\BuildsResponse;
 use App\Models\Application;
@@ -9,6 +10,7 @@ use App\Models\Environment;
 use App\Models\EnvironmentVariable;
 use App\Models\GithubApp;
 use App\Models\InstanceSettings;
+use App\Models\PrivateKey;
 use App\Models\Project;
 use App\Models\ScheduledDatabaseBackup;
 use App\Models\ScheduledDatabaseBackupExecution;
@@ -1881,6 +1883,72 @@ test('cancel_deployment cancels team deployment and rejects other team', functio
     ]);
     expect($denied->json('result.isError'))->toBeTrue();
     expect($otherDep->fresh()->status)->toBe('in_progress');
+});
+
+test('cancel_deployment cleans up an authorized shared build server', function () {
+    $ownerTeam = Team::factory()->create();
+
+    $privateKey = PrivateKey::factory()->create([
+        'team_id' => $ownerTeam->id,
+    ]);
+
+    $buildServer = Server::factory()->create([
+        'team_id' => $ownerTeam->id,
+        'private_key_id' => $privateKey->id,
+        'ip' => '192.0.2.60',
+    ]);
+
+    $buildServer->settings()->update([
+        'is_build_server' => true,
+        'is_reachable' => true,
+    ]);
+
+    $buildServer->sharedTeams()->attach($this->team->id, [
+        'can_build' => true,
+    ]);
+
+    $deployment = ApplicationDeploymentQueue::create([
+        'application_id' => $this->application->id,
+        'deployment_uuid' => 'mcp-shared-build-cancel-'.fake()->uuid(),
+        'status' => ApplicationDeploymentStatus::IN_PROGRESS->value,
+        'server_id' => $this->server->id,
+        'build_server_id' => $buildServer->id,
+        'application_name' => $this->application->name,
+        'server_name' => $this->server->name,
+    ]);
+
+    Process::fake([
+        '*' => Process::result(output: $deployment->deployment_uuid),
+    ]);
+
+    $token = $this->user
+        ->createToken('mcp-shared-build-cancel', ['read', 'deploy'])
+        ->plainTextToken;
+
+    $response = test()->withHeaders([
+        'Content-Type' => 'application/json',
+        'Accept' => 'application/json, text/event-stream',
+        'Authorization' => 'Bearer '.$token,
+    ])->postJson('/mcp', [
+        'jsonrpc' => '2.0',
+        'id' => 1,
+        'method' => 'tools/call',
+        'params' => [
+            'name' => 'cancel_deployment',
+            'arguments' => (object) [
+                'uuid' => $deployment->deployment_uuid,
+            ],
+        ],
+    ]);
+
+    expect($response->json('result.isError'))->not->toBeTrue()
+        ->and($deployment->fresh()->status)
+        ->toBe(ApplicationDeploymentStatus::CANCELLED_BY_USER->value);
+
+    Process::assertRan(
+        fn ($process) => str_contains($process->command, $buildServer->ip)
+            && str_contains($process->command, 'docker ps')
+    );
 });
 
 test('cancel_deployment rejects other team deployment even on owned server', function () {

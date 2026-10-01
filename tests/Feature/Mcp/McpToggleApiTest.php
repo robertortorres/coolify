@@ -18,8 +18,12 @@ beforeEach(function () {
     $settings->save();
 
     $this->team = Team::factory()->create();
+    $this->rootTeam = Team::find(0) ?? Team::factory()->create(['id' => 0]);
+
     $this->user = User::factory()->create();
     $this->team->members()->attach($this->user->id, ['role' => 'owner']);
+    $this->rootTeam->members()->attach($this->user->id, ['role' => 'admin']);
+
     session(['currentTeam' => $this->team]);
 });
 
