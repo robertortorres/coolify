@@ -19,7 +19,9 @@ class Dashboard extends Component
     public function mount()
     {
         $this->privateKeys = PrivateKey::ownedByCurrentTeamCached();
-        $this->servers = Server::ownedByCurrentTeamCached();
+        $this->servers = Server::visibleDeploymentServersForTeam(currentTeam()->id)
+            ->with(['settings', 'team'])
+            ->get();
         $this->projects = Project::ownedByCurrentTeam()
             ->with(['environments:id,uuid,name,project_id'])
             ->withCount([

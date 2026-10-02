@@ -149,7 +149,7 @@ test('shared team can resolve an authorized destination', function () {
     )->toBeTrue();
 });
 
-test('shared deployment server remains hidden and cannot be administered', function () {
+test('shared deployment server is not owned and cannot be administered', function () {
     $this->deploymentServer->sharedTeams()->attach(
         $this->sharedTeam->id,
         [
@@ -164,6 +164,83 @@ test('shared deployment server remains hidden and cannot be administered', funct
     expect(Server::ownedByCurrentTeam()->whereKey($this->deploymentServer->id)->exists())
         ->toBeFalse()
         ->and($this->sharedUser->can('view', $this->deploymentServer))
+        ->toBeFalse()
+        ->and($this->sharedUser->can('update', $this->deploymentServer))
+        ->toBeFalse()
+        ->and($this->sharedUser->can('delete', $this->deploymentServer))
+        ->toBeFalse()
+        ->and($this->sharedUser->can('manageProxy', $this->deploymentServer))
+        ->toBeFalse()
+        ->and($this->sharedUser->can('viewSecurity', $this->deploymentServer))
+        ->toBeFalse();
+});
+
+test('deployment server visibility includes owned and authorized shared servers', function () {
+    $ownedServer = Server::factory()->create([
+        'team_id' => $this->sharedTeam->id,
+    ]);
+
+    $this->deploymentServer->sharedTeams()->attach(
+        $this->sharedTeam->id,
+        [
+            'can_build' => false,
+            'can_deploy' => true,
+        ]
+    );
+
+    expect(
+        Server::visibleDeploymentServersForTeam($this->sharedTeam->id)
+            ->pluck('servers.id')
+    )
+        ->toContain($ownedServer->id)
+        ->toContain($this->deploymentServer->id);
+});
+
+test('deployment server visibility excludes unauthorized servers', function () {
+    expect(
+        Server::visibleDeploymentServersForTeam($this->sharedTeam->id)
+            ->pluck('servers.id')
+    )->not->toContain($this->deploymentServer->id);
+});
+
+test('build-only shared server is not visible as deployment infrastructure', function () {
+    $this->deploymentServer->settings()->update([
+        'is_build_server' => true,
+    ]);
+
+    $this->deploymentServer->sharedTeams()->attach(
+        $this->sharedTeam->id,
+        [
+            'can_build' => true,
+            'can_deploy' => false,
+        ]
+    );
+
+    expect(
+        Server::visibleDeploymentServersForTeam($this->sharedTeam->id)
+            ->pluck('servers.id')
+    )->not->toContain($this->deploymentServer->id);
+});
+
+test('visible shared deployment server remains non-administrable', function () {
+    $this->deploymentServer->sharedTeams()->attach(
+        $this->sharedTeam->id,
+        [
+            'can_build' => false,
+            'can_deploy' => true,
+        ]
+    );
+
+    $this->actingAs($this->sharedUser);
+    session(['currentTeam' => $this->sharedTeam]);
+
+    expect(
+        Server::visibleDeploymentServersForTeam($this->sharedTeam->id)
+            ->whereKey($this->deploymentServer->id)
+            ->exists()
+    )
+        ->toBeTrue()
+        ->and(Server::ownedByCurrentTeam()->whereKey($this->deploymentServer->id)->exists())
         ->toBeFalse()
         ->and($this->sharedUser->can('update', $this->deploymentServer))
         ->toBeFalse()

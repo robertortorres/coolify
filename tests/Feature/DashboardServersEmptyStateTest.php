@@ -106,3 +106,55 @@ it('hides the add private key button for members without create permission', fun
         ->assertSee('A private key is required')
         ->assertDontSee('Add private key');
 });
+
+it('shows a shared deployment server without requiring a private key', function () {
+    $ownerTeam = Team::factory()->create();
+
+    $sharedServer = Server::factory()->create([
+        'team_id' => $ownerTeam->id,
+        'name' => 'Shared Deployment Host',
+    ]);
+
+    $sharedServer->settings()->update([
+        'is_build_server' => false,
+        'is_reachable' => true,
+        'is_usable' => true,
+        'is_swarm_worker' => false,
+        'force_disabled' => false,
+    ]);
+
+    $sharedServer->sharedTeams()->attach($this->team->id, [
+        'can_build' => false,
+        'can_deploy' => true,
+    ]);
+
+    Livewire::test(Dashboard::class)
+        ->assertSee('Shared Deployment Host')
+        ->assertSee('Shared')
+        ->assertSee($ownerTeam->name)
+        ->assertDontSee('A private key is required')
+        ->assertDontSee('Add private key')
+        ->assertDontSeeHtml(route('server.show', ['server_uuid' => $sharedServer->uuid]));
+});
+
+it('does not show a server shared without deployment access on the dashboard', function () {
+    $ownerTeam = Team::factory()->create();
+
+    $sharedServer = Server::factory()->create([
+        'team_id' => $ownerTeam->id,
+        'name' => 'Unauthorized Shared Host',
+    ]);
+
+    $sharedServer->settings()->update([
+        'is_build_server' => false,
+    ]);
+
+    $sharedServer->sharedTeams()->attach($this->team->id, [
+        'can_build' => false,
+        'can_deploy' => false,
+    ]);
+
+    Livewire::test(Dashboard::class)
+        ->assertDontSee('Unauthorized Shared Host')
+        ->assertSee('A private key is required');
+});

@@ -52,13 +52,19 @@
                 default => 'error',
             };
 
+            $isShared = $server->team_id !== currentTeam()->id;
+
             return [
                 'uuid' => $server->uuid,
                 'name' => $server->name,
                 'description' => $server->description,
-                'href' => route('server.show', ['server_uuid' => $server->uuid]),
+                'href' => $isShared
+                    ? null
+                    : route('server.show', ['server_uuid' => $server->uuid]),
                 'status' => $status,
                 'statusType' => $statusType,
+                'isShared' => $isShared,
+                'ownerTeam' => $isShared ? $server->team?->name : null,
             ];
         })->values();
     @endphp
@@ -131,10 +137,16 @@
                     @php
                         $serverRow = $serverRows->firstWhere('uuid', $server->uuid);
                     @endphp
-                    <a x-cloak
-                        x-show="filteredServers.some(server => server.uuid === @js($server->uuid))"
-                        href="{{ $serverRow['href'] }}" {{ wireNavigate() }}
-                        class="group relative flex min-h-28 flex-col rounded-xl border border-neutral-200 bg-white p-3 shadow-sm transition-all hover:-translate-y-px hover:border-neutral-300 hover:no-underline hover:shadow-md dark:border-white/[0.08] dark:bg-white/[0.05] dark:hover:border-white/[0.14]">
+                    @if ($serverRow['isShared'])
+                        <div x-cloak
+                            x-show="filteredServers.some(server => server.uuid === @js($server->uuid))"
+                            class="group relative flex min-h-28 flex-col rounded-xl border border-neutral-200 bg-white p-3 shadow-sm transition-all dark:border-white/[0.08] dark:bg-white/[0.05]">
+                    @else
+                        <a x-cloak
+                            x-show="filteredServers.some(server => server.uuid === @js($server->uuid))"
+                            href="{{ $serverRow['href'] }}" {{ wireNavigate() }}
+                            class="group relative flex min-h-28 flex-col rounded-xl border border-neutral-200 bg-white p-3 shadow-sm transition-all hover:-translate-y-px hover:border-neutral-300 hover:no-underline hover:shadow-md dark:border-white/[0.08] dark:bg-white/[0.05] dark:hover:border-white/[0.14]">
+                    @endif
                         @if ($server->isMetricsEnabled())
                             <livewire:dashboard.server-metrics-chart :server="$server"
                                 :key="'server-index-metrics-'.$server->uuid" />
@@ -149,6 +161,16 @@
                                 <h2 class="truncate text-[13px]! leading-4! font-semibold! text-black dark:text-fg">
                                     {{ $serverRow['name'] }}
                                 </h2>
+                                @if ($serverRow['isShared'])
+                                    <div class="mt-1 flex items-center gap-1.5">
+                                        <x-status-badge label="Shared" />
+                                        @if ($serverRow['ownerTeam'])
+                                            <span class="truncate text-[10px] text-neutral-500 dark:text-fg-faint">
+                                                {{ $serverRow['ownerTeam'] }}
+                                            </span>
+                                        @endif
+                                    </div>
+                                @endif
                                 <p class="mt-0.5 truncate text-[11px] text-neutral-500 dark:text-fg-faint">
                                     {{ $serverRow['description'] }}
                                 </p>
@@ -165,7 +187,11 @@
                                 </span>
                             @endif
                         </div>
-                    </a>
+                    @if ($serverRow['isShared'])
+                        </div>
+                    @else
+                        </a>
+                    @endif
                 @endforeach
             </div>
 
@@ -177,8 +203,8 @@
                     <div>Status</div>
                 </div>
                 <template x-for="server in filteredServers" :key="server.uuid">
-                    <a :href="server.href" {{ wireNavigate() }}
-                        class="grid min-h-14 min-w-[480px] grid-cols-[minmax(0,1fr)_9.5rem] items-center border-b border-neutral-200 px-4 py-2.5 text-[12px] transition-colors last:border-b-0 hover:bg-neutral-50 hover:no-underline dark:border-white/[0.07] dark:hover:bg-white/[0.025]">
+                    <a x-bind:href="server.href" {{ wireNavigate() }}
+                        class="grid min-h-14 min-w-[480px] grid-cols-[minmax(0,1fr)_9.5rem] items-center border-b border-neutral-200 px-4 py-2.5 text-[12px] transition-colors last:border-b-0 dark:border-white/[0.07]">
                         <div class="flex min-w-0 items-center gap-3">
                             <div
                                 class="flex size-8 shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 text-neutral-500 dark:border-white/[0.1] dark:bg-white/[0.035] dark:text-fg-dim">
@@ -189,6 +215,13 @@
                                     x-text="server.name"></p>
                                 <p class="truncate text-[11px] text-neutral-500 dark:text-fg-faint"
                                     x-text="server.description"></p>
+                                <div x-show="server.isShared" class="mt-1 flex items-center gap-1.5">
+                                    <span class="rounded-md border border-neutral-200 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600 dark:border-white/[0.1] dark:text-fg-dim">
+                                        Shared
+                                    </span>
+                                    <span class="truncate text-[10px] text-neutral-500 dark:text-fg-faint"
+                                        x-text="server.ownerTeam"></span>
+                                </div>
                             </div>
                             <span x-show="server.statusType !== 'success'" :data-tooltip="server.status"
                                 :aria-label="`Server status: ${server.status}`"

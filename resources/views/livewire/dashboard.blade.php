@@ -162,9 +162,17 @@
                             };
                         @endphp
 
-                        <a href="{{ route('server.show', ['server_uuid' => $server->uuid]) }}"
-                            {{ wireNavigate() }} aria-label="Open {{ $server->name }}"
-                            class="group relative flex min-h-28 min-w-0 flex-col rounded-xl border border-neutral-200 bg-white p-3 shadow-sm transition-all hover:-translate-y-px hover:border-neutral-300 hover:shadow-md dark:border-white/[0.08] dark:bg-white/[0.05] dark:hover:border-white/[0.14]">
+                        @php
+                            $isShared = $server->team_id !== currentTeam()->id;
+                        @endphp
+                        @if ($isShared)
+                            <div aria-label="Shared deployment server {{ $server->name }}"
+                                class="group relative flex min-h-28 min-w-0 flex-col rounded-xl border border-neutral-200 bg-white p-3 shadow-sm transition-all dark:border-white/[0.08] dark:bg-white/[0.05]">
+                        @else
+                            <a href="{{ route('server.show', ['server_uuid' => $server->uuid]) }}"
+                                {{ wireNavigate() }} aria-label="Open {{ $server->name }}"
+                                class="group relative flex min-h-28 min-w-0 flex-col rounded-xl border border-neutral-200 bg-white p-3 shadow-sm transition-all hover:-translate-y-px hover:border-neutral-300 hover:shadow-md dark:border-white/[0.08] dark:bg-white/[0.05] dark:hover:border-white/[0.14]">
+                        @endif
                             @if ($server->isMetricsEnabled())
                                 <livewire:dashboard.server-metrics-chart :server="$server"
                                     :key="'dashboard-server-metrics-'.$server->uuid" />
@@ -180,6 +188,16 @@
                                         class="truncate text-[13px]! leading-4! font-semibold! text-black dark:text-fg">
                                         {{ $server->name }}
                                     </h3>
+                                    @if ($isShared)
+                                        <div class="mt-1 flex items-center gap-1.5">
+                                            <x-status-badge label="Shared" />
+                                            @if ($server->team?->name)
+                                                <span class="truncate text-[10px] text-neutral-500 dark:text-fg-faint">
+                                                    {{ $server->team->name }}
+                                                </span>
+                                            @endif
+                                        </div>
+                                    @endif
                                     <p class="mt-0.5 truncate text-[11px] text-neutral-500 dark:text-fg-faint">
                                         {{ $server->description }}
                                     </p>
@@ -196,7 +214,11 @@
                                     </span>
                                 @endif
                             </div>
-                        </a>
+                        @if ($isShared)
+                            </div>
+                        @else
+                            </a>
+                        @endif
                     @endforeach
                 </div>
             @endif

@@ -925,6 +925,20 @@ $siteAddress {
             });
     }
 
+    /**
+     * Servers that should be visible to a team as deployment infrastructure.
+     *
+     * This includes servers owned by the team and non-build servers explicitly
+     * shared with the team for deployments. Visibility here does not grant
+     * administrative access to shared servers.
+     */
+    public static function visibleDeploymentServersForTeam(int $teamId): Builder
+    {
+        return self::query()
+            ->deployableByTeam($teamId)
+            ->whereRelation('settings', 'is_build_server', false);
+    }
+
     public static function usableDeploymentServersForTeam(int $teamId): Builder
     {
         return self::query()
