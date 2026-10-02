@@ -492,6 +492,193 @@ test('API read token cannot expose another members private application', functio
     'operator direct API' => ['operator', 'direct'],
 ]);
 
+test('recipient can open an explicitly shared application through its owner project route', function () {
+    $ownerTeam = Team::factory()->create();
+    $owner = User::factory()->create();
+    $ownerTeam->members()->attach($owner->id, ['role' => 'owner']);
+
+    $recipientTeam = Team::factory()->create();
+    $recipient = User::factory()->create();
+    $recipientTeam->members()->attach($recipient->id, ['role' => 'owner']);
+
+    $project = Project::factory()->create(['team_id' => $ownerTeam->id]);
+    $environment = Environment::factory()->create(['project_id' => $project->id]);
+
+    $server = Server::factory()->create([
+        'team_id' => $ownerTeam->id,
+    ]);
+
+    $destination = StandaloneDocker::query()
+        ->where('server_id', $server->id)
+        ->firstOrFail();
+
+    $shared = Application::factory()->create([
+        'environment_id' => $environment->id,
+        'destination_id' => $destination->id,
+        'destination_type' => $destination->getMorphClass(),
+        'visibility' => 'custom',
+    ]);
+
+    ApplicationShare::create([
+        'application_id' => $shared->id,
+        'team_id' => $recipientTeam->id,
+        'permission' => 'read',
+        'granted_by' => $owner->id,
+    ]);
+
+    $this->actingAs($recipient);
+    session(['currentTeam' => $recipientTeam]);
+
+    $this->get(route('project.application.configuration', [
+        'project_uuid' => $project->uuid,
+        'environment_uuid' => $environment->uuid,
+        'application_uuid' => $shared->uuid,
+    ]))->assertOk();
+});
+
+test('recipient cannot use a shared application parent route to open an unshared sibling', function () {
+    $ownerTeam = Team::factory()->create();
+    $owner = User::factory()->create();
+    $ownerTeam->members()->attach($owner->id, ['role' => 'owner']);
+
+    $recipientTeam = Team::factory()->create();
+    $recipient = User::factory()->create();
+    $recipientTeam->members()->attach($recipient->id, ['role' => 'owner']);
+
+    $project = Project::factory()->create(['team_id' => $ownerTeam->id]);
+    $environment = Environment::factory()->create(['project_id' => $project->id]);
+
+    $server = Server::factory()->create([
+        'team_id' => $ownerTeam->id,
+    ]);
+
+    $destination = StandaloneDocker::query()
+        ->where('server_id', $server->id)
+        ->firstOrFail();
+
+    $shared = Application::factory()->create([
+        'environment_id' => $environment->id,
+        'destination_id' => $destination->id,
+        'destination_type' => $destination->getMorphClass(),
+        'visibility' => 'custom',
+    ]);
+
+    $private = Application::factory()->create([
+        'environment_id' => $environment->id,
+        'destination_id' => $destination->id,
+        'destination_type' => $destination->getMorphClass(),
+        'visibility' => 'private',
+    ]);
+
+    ApplicationShare::create([
+        'application_id' => $shared->id,
+        'team_id' => $recipientTeam->id,
+        'permission' => 'read',
+        'granted_by' => $owner->id,
+    ]);
+
+    $this->actingAs($recipient);
+    session(['currentTeam' => $recipientTeam]);
+
+    $this->get(route('project.application.configuration', [
+        'project_uuid' => $project->uuid,
+        'environment_uuid' => $environment->uuid,
+        'application_uuid' => $private->uuid,
+    ]))->assertNotFound();
+});
+
+test('recipient cannot open a shared application with a mismatched project route', function () {
+    $ownerTeam = Team::factory()->create();
+    $owner = User::factory()->create();
+    $ownerTeam->members()->attach($owner->id, ['role' => 'owner']);
+
+    $recipientTeam = Team::factory()->create();
+    $recipient = User::factory()->create();
+    $recipientTeam->members()->attach($recipient->id, ['role' => 'owner']);
+
+    $project = Project::factory()->create(['team_id' => $ownerTeam->id]);
+    $environment = Environment::factory()->create(['project_id' => $project->id]);
+    $otherProject = Project::factory()->create(['team_id' => $ownerTeam->id]);
+
+    $server = Server::factory()->create([
+        'team_id' => $ownerTeam->id,
+    ]);
+
+    $destination = StandaloneDocker::query()
+        ->where('server_id', $server->id)
+        ->firstOrFail();
+
+    $shared = Application::factory()->create([
+        'environment_id' => $environment->id,
+        'destination_id' => $destination->id,
+        'destination_type' => $destination->getMorphClass(),
+        'visibility' => 'custom',
+    ]);
+
+    ApplicationShare::create([
+        'application_id' => $shared->id,
+        'team_id' => $recipientTeam->id,
+        'permission' => 'read',
+        'granted_by' => $owner->id,
+    ]);
+
+    $this->actingAs($recipient);
+    session(['currentTeam' => $recipientTeam]);
+
+    $this->get(route('project.application.configuration', [
+        'project_uuid' => $otherProject->uuid,
+        'environment_uuid' => $environment->uuid,
+        'application_uuid' => $shared->uuid,
+    ]))->assertNotFound();
+});
+
+test('recipient cannot open a shared application with a mismatched environment route', function () {
+    $ownerTeam = Team::factory()->create();
+    $owner = User::factory()->create();
+    $ownerTeam->members()->attach($owner->id, ['role' => 'owner']);
+
+    $recipientTeam = Team::factory()->create();
+    $recipient = User::factory()->create();
+    $recipientTeam->members()->attach($recipient->id, ['role' => 'owner']);
+
+    $project = Project::factory()->create(['team_id' => $ownerTeam->id]);
+    $environment = Environment::factory()->create(['project_id' => $project->id]);
+    $otherEnvironment = Environment::factory()->create([
+        'project_id' => $project->id,
+    ]);
+
+    $server = Server::factory()->create([
+        'team_id' => $ownerTeam->id,
+    ]);
+
+    $destination = StandaloneDocker::query()
+        ->where('server_id', $server->id)
+        ->firstOrFail();
+
+    $shared = Application::factory()->create([
+        'environment_id' => $environment->id,
+        'destination_id' => $destination->id,
+        'destination_type' => $destination->getMorphClass(),
+        'visibility' => 'custom',
+    ]);
+
+    ApplicationShare::create([
+        'application_id' => $shared->id,
+        'team_id' => $recipientTeam->id,
+        'permission' => 'read',
+        'granted_by' => $owner->id,
+    ]);
+
+    $this->actingAs($recipient);
+    session(['currentTeam' => $recipientTeam]);
+
+    $this->get(route('project.application.configuration', [
+        'project_uuid' => $project->uuid,
+        'environment_uuid' => $otherEnvironment->uuid,
+        'application_uuid' => $shared->uuid,
+    ]))->assertNotFound();
+});
+
 test('global search hides private applications with cold or owner warmed cache', function (
     string $role,
     bool $warmCache

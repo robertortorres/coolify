@@ -26,24 +26,24 @@ class Configuration extends Component
     {
         $this->syncCurrentRoute();
 
-        $project = currentTeam()
-            ->projects()
-            ->select('id', 'uuid', 'name', 'team_id')
-            ->where('uuid', request()->route('project_uuid'))
-            ->firstOrFail();
-        $environment = $project->environments()
-            ->select('id', 'uuid', 'name', 'project_id')
-            ->where('uuid', request()->route('environment_uuid'))
-            ->firstOrFail();
-        $application = $environment->applications()
+        $application = Application::query()
             ->visibleTo(auth()->user())
             ->with(['destination.server', 'environment.project'])
             ->where('uuid', request()->route('application_uuid'))
+            ->whereHas('environment', function ($query) {
+                $query
+                    ->where('uuid', request()->route('environment_uuid'))
+                    ->whereHas('project', function ($query) {
+                        $query->where(
+                            'uuid',
+                            request()->route('project_uuid')
+                        );
+                    });
+            })
             ->firstOrFail();
 
-        // Parent page already resolved these; keep them on the model for nested components.
-        $application->setRelation('environment', $environment);
-        $environment->setRelation('project', $project);
+        $environment = $application->environment;
+        $project = $environment->project;
 
         $this->project = $project;
         $this->environment = $environment;
