@@ -2,6 +2,7 @@
 
 use App\Jobs\ApplicationDeploymentJob;
 use App\Livewire\GlobalSearch;
+use App\Livewire\Project\Index as ProjectIndex;
 use App\Livewire\Project\Shared\EnvironmentVariable\Add;
 use App\Livewire\Project\Shared\EnvironmentVariable\All;
 use App\Livewire\Project\Shared\EnvironmentVariable\Show;
@@ -491,6 +492,216 @@ test('API read token cannot expose another members private application', functio
     'member direct API' => ['member', 'direct'],
     'operator direct API' => ['operator', 'direct'],
 ]);
+
+test('projects index discovers visible applications shared from another team', function () {
+    $ownerTeam = Team::factory()->create();
+    $owner = User::factory()->create();
+    $ownerTeam->members()->attach($owner->id, ['role' => 'owner']);
+
+    $recipientTeam = Team::factory()->create();
+    $recipient = User::factory()->create();
+    $recipientTeam->members()->attach($recipient->id, ['role' => 'owner']);
+
+    $ownerProject = Project::factory()->create([
+        'team_id' => $ownerTeam->id,
+    ]);
+    $ownerEnvironment = Environment::factory()->create([
+        'project_id' => $ownerProject->id,
+    ]);
+
+    $recipientProject = Project::factory()->create([
+        'team_id' => $recipientTeam->id,
+    ]);
+    $recipientEnvironment = Environment::factory()->create([
+        'project_id' => $recipientProject->id,
+    ]);
+
+    $server = Server::factory()->create([
+        'team_id' => $ownerTeam->id,
+    ]);
+    $destination = StandaloneDocker::query()
+        ->where('server_id', $server->id)
+        ->firstOrFail();
+
+    $shared = Application::factory()->create([
+        'name' => 'cross-team-shared-app',
+        'environment_id' => $ownerEnvironment->id,
+        'destination_id' => $destination->id,
+        'destination_type' => $destination->getMorphClass(),
+        'visibility' => 'custom',
+    ]);
+
+    $private = Application::factory()->create([
+        'name' => 'cross-team-private-app',
+        'environment_id' => $ownerEnvironment->id,
+        'destination_id' => $destination->id,
+        'destination_type' => $destination->getMorphClass(),
+        'visibility' => 'private',
+    ]);
+
+    Application::factory()->create([
+        'name' => 'recipient-owned-app',
+        'environment_id' => $recipientEnvironment->id,
+        'destination_id' => $destination->id,
+        'destination_type' => $destination->getMorphClass(),
+    ]);
+
+    ApplicationShare::create([
+        'application_id' => $shared->id,
+        'team_id' => $recipientTeam->id,
+        'permission' => 'read',
+        'granted_by' => $owner->id,
+    ]);
+
+    $this->actingAs($recipient);
+    session(['currentTeam' => $recipientTeam]);
+
+    $component = Livewire::test(ProjectIndex::class);
+
+    expect($component->get('projects')->pluck('id')->all())
+        ->toContain($recipientProject->id)
+        ->not->toContain($ownerProject->id);
+
+    expect($component->get('sharedApplications')->pluck('id')->all())
+        ->toContain($shared->id)
+        ->not->toContain($private->id);
+});
+
+test('projects index removes a shared application after its grant is revoked', function () {
+    $ownerTeam = Team::factory()->create();
+    $owner = User::factory()->create();
+    $ownerTeam->members()->attach($owner->id, ['role' => 'owner']);
+
+    $recipientTeam = Team::factory()->create();
+    $recipient = User::factory()->create();
+    $recipientTeam->members()->attach($recipient->id, ['role' => 'owner']);
+
+    $project = Project::factory()->create([
+        'team_id' => $ownerTeam->id,
+    ]);
+    $environment = Environment::factory()->create([
+        'project_id' => $project->id,
+    ]);
+
+    $server = Server::factory()->create([
+        'team_id' => $ownerTeam->id,
+    ]);
+    $destination = StandaloneDocker::query()
+        ->where('server_id', $server->id)
+        ->firstOrFail();
+
+    $shared = Application::factory()->create([
+        'environment_id' => $environment->id,
+        'destination_id' => $destination->id,
+        'destination_type' => $destination->getMorphClass(),
+        'visibility' => 'custom',
+    ]);
+
+    $grant = ApplicationShare::create([
+        'application_id' => $shared->id,
+        'team_id' => $recipientTeam->id,
+        'permission' => 'read',
+        'granted_by' => $owner->id,
+    ]);
+
+    $this->actingAs($recipient);
+    session(['currentTeam' => $recipientTeam]);
+
+    expect(
+        Livewire::test(ProjectIndex::class)
+            ->get('sharedApplications')
+            ->pluck('id')
+            ->all()
+    )->toContain($shared->id);
+
+    $grant->delete();
+
+    expect(
+        Livewire::test(ProjectIndex::class)
+            ->get('sharedApplications')
+            ->pluck('id')
+            ->all()
+    )->not->toContain($shared->id);
+});
+
+test('projects page renders a direct link to a shared application without exposing its owner project link', function () {
+    $ownerTeam = Team::factory()->create();
+    $owner = User::factory()->create();
+    $ownerTeam->members()->attach($owner->id, ['role' => 'owner']);
+
+    $recipientTeam = Team::factory()->create();
+    $recipient = User::factory()->create();
+    $recipientTeam->members()->attach($recipient->id, ['role' => 'owner']);
+
+    $project = Project::factory()->create([
+        'name' => 'owner-project-for-shared-app',
+        'team_id' => $ownerTeam->id,
+    ]);
+    $environment = Environment::factory()->create([
+        'name' => 'owner-environment-for-shared-app',
+        'project_id' => $project->id,
+    ]);
+
+    $server = Server::factory()->create([
+        'team_id' => $ownerTeam->id,
+    ]);
+    $destination = StandaloneDocker::query()
+        ->where('server_id', $server->id)
+        ->firstOrFail();
+
+    $shared = Application::factory()->create([
+        'name' => 'visible-shared-application',
+        'environment_id' => $environment->id,
+        'destination_id' => $destination->id,
+        'destination_type' => $destination->getMorphClass(),
+        'visibility' => 'custom',
+    ]);
+
+    $private = Application::factory()->create([
+        'name' => 'hidden-private-application',
+        'environment_id' => $environment->id,
+        'destination_id' => $destination->id,
+        'destination_type' => $destination->getMorphClass(),
+        'visibility' => 'private',
+    ]);
+
+    ApplicationShare::create([
+        'application_id' => $shared->id,
+        'team_id' => $recipientTeam->id,
+        'permission' => 'read',
+        'granted_by' => $owner->id,
+    ]);
+
+    $this->actingAs($recipient);
+    session(['currentTeam' => $recipientTeam]);
+
+    $applicationUrl = route('project.application.configuration', [
+        'project_uuid' => $project->uuid,
+        'environment_uuid' => $environment->uuid,
+        'application_uuid' => $shared->uuid,
+    ]);
+
+    $projectUrl = $project->navigateTo();
+
+    $this->get(route('project.index'))
+        ->assertOk()
+        ->assertSee('Shared Applications')
+        ->assertSee('visible-shared-application')
+        ->assertSee('owner-project-for-shared-app')
+        ->assertSee('owner-environment-for-shared-app')
+        ->assertDontSee('hidden-private-application')
+        ->assertDontSee($projectUrl, false);
+
+    $component = Livewire::test(ProjectIndex::class);
+    $sharedPayload = $component->viewData('sharedApplicationsJs');
+
+    expect($sharedPayload)
+        ->toHaveCount(1)
+        ->and($sharedPayload[0]['uuid'])->toBe($shared->uuid)
+        ->and($sharedPayload[0]['href'])->toBe($applicationUrl)
+        ->and($sharedPayload[0]['projectName'])->toBe($project->name)
+        ->and($sharedPayload[0]['environmentName'])->toBe($environment->name);
+});
 
 test('recipient can open an explicitly shared application through its owner project route', function () {
     $ownerTeam = Team::factory()->create();

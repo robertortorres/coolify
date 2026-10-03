@@ -220,6 +220,60 @@
                 </p>
             </div>
         @endif
+
+        @if ($sharedApplications->isNotEmpty())
+            <section class="mt-8">
+                <div class="mb-3">
+                    <h2 class="text-[16px]! leading-5! font-semibold! tracking-tight!">
+                        Shared Applications
+                    </h2>
+                    <p class="mt-1 text-[12px] text-neutral-500 dark:text-fg-dim">
+                        Applications shared with you from other teams.
+                    </p>
+                </div>
+
+                <div class="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-white/[0.08] dark:bg-white/[0.05]">
+                    <template x-for="application in sharedApplications" :key="application.uuid">
+                        <a :href="application.href" {{ wireNavigate() }}
+                            class="group flex min-h-14 items-center gap-3 border-b border-neutral-200 px-4 py-2.5 transition-colors last:border-b-0 hover:bg-neutral-50 dark:border-white/[0.07] dark:hover:bg-white/[0.025]">
+                            <div
+                                class="flex size-8 shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 text-neutral-500 dark:border-white/[0.08] dark:bg-white/[0.035] dark:text-fg-dim">
+                                <x-reicon name="applications" class="size-4" />
+                            </div>
+
+                            <div class="min-w-0 flex-1">
+                                <div class="flex min-w-0 items-center gap-2">
+                                    <span
+                                        class="truncate text-[13px] font-semibold text-black group-hover:underline dark:text-fg"
+                                        x-text="application.name"></span>
+                                    <span
+                                        class="shrink-0 rounded-md border border-neutral-200 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500 dark:border-white/[0.1] dark:text-fg-dim">
+                                        Shared
+                                    </span>
+                                </div>
+
+                                <p class="mt-0.5 truncate text-[11px] text-neutral-500 dark:text-fg-faint">
+                                    <span x-text="application.projectName"></span>
+                                    <span class="px-1 text-neutral-300 dark:text-white/15">/</span>
+                                    <span x-text="application.environmentName"></span>
+                                </p>
+                            </div>
+
+                            <div class="hidden min-w-0 shrink-0 text-right sm:block">
+                                <p class="text-[11px] text-neutral-400 dark:text-fg-faint">
+                                    Owner team
+                                </p>
+                                <p class="max-w-48 truncate text-[12px] text-neutral-600 dark:text-fg-dim"
+                                    x-text="application.ownerTeamName || '-'"></p>
+                            </div>
+
+                            <x-reicon name="chevron-right"
+                                class="size-3.5 shrink-0 text-neutral-300 transition-transform group-hover:translate-x-0.5 dark:text-fg-faint" />
+                        </a>
+                    </template>
+                </div>
+            </section>
+        @endif
     </div>
 </div>
 
@@ -233,6 +287,7 @@
             page: 1,
             pageSize: 12,
             projects: @js($projectsJs),
+            sharedApplications: @js($sharedApplicationsJs),
             sortOptions: [{
                     value: 'name-asc',
                     label: 'Name A–Z'

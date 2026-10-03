@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Project;
 
+use App\Models\Application;
 use App\Models\Project;
 use Illuminate\Contracts\View\View;
 use Livewire\Component;
@@ -9,6 +10,8 @@ use Livewire\Component;
 class Index extends Component
 {
     public $projects;
+
+    public $sharedApplications;
 
     public function mount(): void
     {
@@ -28,6 +31,19 @@ class Index extends Component
                 'mysqls',
                 'mariadbs',
             ])
+            ->get();
+
+        $this->sharedApplications = Application::query()
+            ->visibleTo(auth()->user())
+            ->with([
+                'environment:id,uuid,name,project_id',
+                'environment.project:id,uuid,name,team_id',
+                'environment.project.team:id,name',
+            ])
+            ->whereHas('environment.project', function ($query): void {
+                $query->where('team_id', '!=', currentTeam()->id);
+            })
+            ->orderBy('name')
             ->get();
     }
 
@@ -68,6 +84,26 @@ class Index extends Component
                         : null,
                 ];
             })->values()->toArray(),
+            'sharedApplicationsJs' => $this->sharedApplications
+                ->map(function (Application $application): array {
+                    $environment = $application->environment;
+                    $project = $environment->project;
+
+                    return [
+                        'uuid' => $application->uuid,
+                        'name' => $application->name,
+                        'projectName' => $project->name,
+                        'environmentName' => $environment->name,
+                        'ownerTeamName' => $project->team?->name,
+                        'href' => route('project.application.configuration', [
+                            'project_uuid' => $project->uuid,
+                            'environment_uuid' => $environment->uuid,
+                            'application_uuid' => $application->uuid,
+                        ]),
+                    ];
+                })
+                ->values()
+                ->toArray(),
         ]);
     }
 }
